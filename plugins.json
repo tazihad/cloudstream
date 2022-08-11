@@ -1,0 +1,115 @@
+[
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/CityPlex.cs3",
+        "status": 1,
+        "version": 4,
+        "name": "CityPlex",
+        "internalName": "CityPlex",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "CityPlex BDIX Provider with TMDB support for media description",
+        "fileSize": 78436,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "AnimeMovie",
+            "OVA",
+            "Cartoon",
+            "AsianDrama",
+            "Others",
+            "Documentary"
+        ],
+        "apiVersion": 1,
+        "fileHash": "sha256-82e3c168cf996cedbbed159683d8bf32b1ba130990ae2cd3caa706d89c09a172"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/CtgHall.cs3",
+        "status": 1,
+        "version": 2,
+        "name": "CtgHall",
+        "internalName": "CtgHall",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "CTG Hall Movie/Show Provider with TMDB support for media description",
+        "fileSize": 57836,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "AnimeMovie",
+            "OVA",
+            "Cartoon",
+            "AsianDrama",
+            "Others",
+            "Documentary"
+        ],
+        "apiVersion": 1,
+        "fileHash": "sha256-ff0603f26a658ac221db51bf67f78b2e04acb7de93ce838606ef050afa5182d3"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/DhakaFlix.cs3",
+        "status": 1,
+        "version": 13,
+        "name": "DhakaFlix",
+        "internalName": "DhakaFlix",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "DhakaFlix BDIX Provider with TMDB support for media description",
+        "fileSize": 89503,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "AnimeMovie",
+            "OVA",
+            "Cartoon",
+            "AsianDrama",
+            "Others",
+            "Documentary"
+        ],
+        "apiVersion": 1,
+        "fileHash": "sha256-de103514f08ef0b36694c4e910bb2437bf3dddad6c1bbd29a1fe6332b5048e91"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/Infobase.cs3",
+        "status": 3,
+        "version": 1,
+        "name": "Infobase",
+        "internalName": "Infobase",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "Infobase server provider with TMDB metadata",
+        "fileSize": 55994,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "apiVersion": 1,
+        "fileHash": "sha256-e1f7f15b6dbd56d12fe76b3fd193e3ded09c2e66f4ffea81354a6863b6758ee4"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/RoyalFlix.cs3",
+        "status": 3,
+        "version": 2,
+        "name": "RoyalFlix",
+        "internalName": "RoyalFlix",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "RoyalFlix server provider with TMDB metadata",
+        "fileSize": 64079,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "apiVersion": 1,
+        "fileHash": "sha256-a7d7ee672fcbb6c1bfbef9c9b161a86d212b32f5fc8570da507da590a4b66d24"
+    }
+]
