@@ -1,0 +1,196 @@
+[
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/CinePlex.cs3",
+        "status": 1,
+        "version": 1,
+        "name": "CinePlex",
+        "internalName": "CinePlex",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "CinePlex BDIX Provider",
+        "fileSize": 24434,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "AnimeMovie",
+            "OVA",
+            "Cartoon",
+            "AsianDrama",
+            "Others",
+            "Documentary"
+        ],
+        "apiVersion": 1,
+        "fileHash": "sha256-1647ebfd3bf2d77a906afb073dd59086992899e21e13a468d697ef861b0e7f8e"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/CityPlex.cs3",
+        "status": 1,
+        "version": 4,
+        "name": "CityPlex",
+        "internalName": "CityPlex",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "CityPlex BDIX Provider with TMDB support for media description",
+        "fileSize": 78436,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "AnimeMovie",
+            "OVA",
+            "Cartoon",
+            "AsianDrama",
+            "Others",
+            "Documentary"
+        ],
+        "apiVersion": 1,
+        "fileHash": "sha256-82e3c168cf996cedbbed159683d8bf32b1ba130990ae2cd3caa706d89c09a172"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/CtgHall.cs3",
+        "status": 1,
+        "version": 2,
+        "name": "CtgHall",
+        "internalName": "CtgHall",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "CTG Hall Movie/Show Provider with TMDB support for media description",
+        "fileSize": 57836,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "AnimeMovie",
+            "OVA",
+            "Cartoon",
+            "AsianDrama",
+            "Others",
+            "Documentary"
+        ],
+        "apiVersion": 1,
+        "fileHash": "sha256-ff0603f26a658ac221db51bf67f78b2e04acb7de93ce838606ef050afa5182d3"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/DhakaFlix.cs3",
+        "status": 1,
+        "version": 16,
+        "name": "DhakaFlix",
+        "internalName": "DhakaFlix",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "DhakaFlix BDIX Provider with TMDB support for media description",
+        "fileSize": 94424,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "AnimeMovie",
+            "OVA",
+            "Cartoon",
+            "AsianDrama",
+            "Others",
+            "Documentary"
+        ],
+        "apiVersion": 1,
+        "fileHash": "sha256-ca22110c4869d31df3472cde32d75404d204b828cdc976fbec3113b17baf385b"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/FlixHub.cs3",
+        "status": 1,
+        "version": 2,
+        "name": "FlixHub",
+        "internalName": "FlixHub",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "FlixHub Provider for movies and TV series",
+        "fileSize": 29230,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "AnimeMovie",
+            "OVA",
+            "Cartoon",
+            "AsianDrama",
+            "Others",
+            "Documentary"
+        ],
+        "apiVersion": 1,
+        "fileHash": "sha256-8fa14777ee0f71c95bc233ba18f69813c4fb1201f78cf72888a2267a4a67eb29"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/Infobase.cs3",
+        "status": 3,
+        "version": 1,
+        "name": "Infobase",
+        "internalName": "Infobase",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "Infobase server provider with TMDB metadata",
+        "fileSize": 55994,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "apiVersion": 1,
+        "fileHash": "sha256-e1f7f15b6dbd56d12fe76b3fd193e3ded09c2e66f4ffea81354a6863b6758ee4"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/Nagordola.cs3",
+        "status": 1,
+        "version": 5,
+        "name": "Nagordola",
+        "internalName": "Nagordola",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "Nagordola AList CDN Provider with TMDB integration",
+        "fileSize": 808596,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "AnimeMovie",
+            "OVA",
+            "Cartoon",
+            "AsianDrama",
+            "Others",
+            "Documentary"
+        ],
+        "apiVersion": 1,
+        "fileHash": "sha256-0b63da31fcb459ebaff598552fc9422fb44d4100b295ccce9b1deb8438e27601"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/tazihad/cloudstream/builds/RoyalFlix.cs3",
+        "status": 3,
+        "version": 2,
+        "name": "RoyalFlix",
+        "internalName": "RoyalFlix",
+        "authors": [
+            "tazihad"
+        ],
+        "description": "RoyalFlix server provider with TMDB metadata",
+        "fileSize": 64079,
+        "repositoryUrl": "https://github.com/tazihad/cloudstream",
+        "language": "bn",
+        "apiVersion": 1,
+        "fileHash": "sha256-a7d7ee672fcbb6c1bfbef9c9b161a86d212b32f5fc8570da507da590a4b66d24"
+    }
+]
