@@ -3,7 +3,7 @@ package com.niloy
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.mainPageOf
 
-class BdixDhakaFlix9Provider : BdixDhakaFlix14Provider() {
+class BdixDhakaFlix9Provider : BdixDhakaFlixCommonProvider() {
     override var mainUrl = "http://172.16.50.9"
     override var name = "(BDIX) DhakaFlix 9"
     override val tvSeriesKeyword: List<String> =

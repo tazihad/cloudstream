@@ -3,15 +3,14 @@ package com.niloy
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.mainPageOf
 
-class BdixDhakaFlix7Provider : BdixDhakaFlix14Provider()  {
+class BdixDhakaFlix7Provider : BdixDhakaFlixCommonProvider()  {
     override var mainUrl = "http://172.16.50.7"
     override var name = "(BDIX) DhakaFlix 7"
     override val tvSeriesKeyword: List<String> = emptyList()
     override val serverName: String = "DHAKA-FLIX-7"
     override val supportedTypes = setOf(TvType.Movie)
-    override val mainPage= mainPageOf(
+    override val mainPage = mainPageOf(
         "English Movies/($year)/" to "English Movies",
-        "English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
         "Foreign Language Movies/Japanese Language/" to "Japanese Movies",
         "Foreign Language Movies/Korean Language/" to "Korean Movies",
         "Foreign Language Movies/Bangla Dubbing Movies/" to "Bangla Dubbing Movies",

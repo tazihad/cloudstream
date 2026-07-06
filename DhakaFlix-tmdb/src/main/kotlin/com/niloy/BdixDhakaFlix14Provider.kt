@@ -127,7 +127,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "Animation Movies (1080p)/" to "Animation Movies",
-        "English Movies (1080p)/($year) 1080p/" to "English Movies",
+        "English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
         "Hindi Movies/($year)/" to "Hindi Movies",
         "SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies Hindi Dubbed",
         "/KOREAN TV %26 WEB Series/" to "Korean TV & WEB Series",
