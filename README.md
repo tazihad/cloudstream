@@ -1,6 +1,6 @@
 
 
-## <a href="https://raw.githubusercontent.com/Niloy-Sarker/DhakaFlix_Cloudstream/master/repo.json">Install Repo</a>
+## <a href="https://raw.githubusercontent.com/tazihad/Cloudstream/master/repo.json">Install Repo</a>
 
 ### Detailed Guide to Install Repo
 
