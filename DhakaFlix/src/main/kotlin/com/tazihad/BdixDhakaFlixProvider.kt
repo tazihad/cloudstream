@@ -27,6 +27,7 @@ import kotlinx.coroutines.*
 import org.jsoup.nodes.Element
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.Calendar
 import java.util.Collections
 
 open class BdixDhakaFlixProvider : MainAPI() {
@@ -41,7 +42,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
         TvType.Movie, TvType.AnimeMovie, TvType.TvSeries, TvType.Anime
     )
 
-    protected val year = 2025
+    protected val year: Int = Calendar.getInstance().get(Calendar.YEAR)
 
     protected data class LocalServer(
         val id: String,
