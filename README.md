@@ -1,28 +1,64 @@
+# Cloudstream Plugin Repo
 
+A [Cloudstream](https://recloudstream.github.io/) plugin repository maintained by **tazihad** featuring the **DhakaFlix** BDIX extension.
 
-## <a href="https://raw.githubusercontent.com/Niloy-Sarker/DhakaFlix_Cloudstream/master/repo.json">Install Repo</a>
+## Installing the Repository
 
-### Detailed Guide to Install Repo
+### Method 1 — One-Tap Install
 
-To install the DhakaFlix Cloudstream repository, follow these steps:
+[Install Tazihad's BDIX Repo →](https://raw.githubusercontent.com/tazihad/cloudstream/master/repo.json)
 
-1. Open the Cloudstream app on your device.
-2. Navigate to **Settings** → **Extensions**.
-3. Tap on **Add Repository**.
-4. Enter **niloy-cs** 
-5. Tap **Add** to save the repository.
-6. Once added, you can browse and install the available extensions from the DhakaFlix repository.
+Tap the link above to add the repository directly to Cloudstream.
 
-## How to Get a TMDb API Key
+### Method 2 — Manual Install
 
-To use DhakaFlix-tmdb, you need a TMDb API key. Follow these steps to obtain one:
+1. Open the **Cloudstream** app.
+2. Go to **Settings** → **Extensions**.
+3. Tap **Add Repository**.
+4. Enter the repository URL:
+   ```
+   https://raw.githubusercontent.com/tazihad/cloudstream/master/repo.json
+   ```
+5. Tap **Save** / **Add**.
 
-1. Go to the [TMDb website](https://www.themoviedb.org/).
-2. Create a free account or log in if you already have one.
-3. After logging in, click on your profile icon (top right) and select **Settings**.
-4. In the left sidebar, click on **API**.
-5. Fill out the API request form with the required information.
-6. Once approved, you will see your API key listed under **API Key**.
-7. Copy this key and use it in the DhakaFlix-tmdb extension as needed.
+Once the repository is added, refresh it and install the **DhakaFlix** extension.
 
-**Note:** Keep your API key private and do not share it publicly.
+## DhakaFlix Extension
+
+The DhakaFlix extension provides access to local BDIX media servers with TMDb metadata enrichment:
+
+| Provider      | Server              |
+|---------------|---------------------|
+| (BDIX) DhakaFlix 7  | `172.16.50.7`  |
+| (BDIX) DhakaFlix 9  | `172.16.50.9`  |
+| (BDIX) DhakaFlix 12 | `172.16.50.12` |
+| (BDIX) DhakaFlix 14 | `172.16.50.14` |
+
+> These servers are reachable only on the **BDIX (Bangladesh Internet Exchange)** network.
+
+### Setting Up a TMDb API Key
+
+DhakaFlix uses **TMDb** to fetch movie/TV metadata and posters. An API key is required:
+
+1. Go to the [TMDb website](https://www.themoviedb.org/) and create a free account.
+2. Once logged in, go to **Settings** → **API** in your profile menu.
+3. Fill out the request form and submit it (approval is usually quick).
+4. Copy your **API Key** from the **API Key** section.
+5. In Cloudstream, open the **DhakaFlix** extension settings and paste the key.
+6. Done — metadata will now be loaded for eligible titles.
+
+> **Note:** Keep your API key private. Do not share it or commit it to any repository.
+
+## Building
+
+To build the plugin locally:
+
+```bash
+./gradlew assemble
+```
+
+The built plugin APK will be placed in the module's `build` directory.
+
+## License
+
+This project is provided as-is for personal use on the Cloudstream platform.
