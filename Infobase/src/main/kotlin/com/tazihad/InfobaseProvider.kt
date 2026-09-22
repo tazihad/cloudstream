@@ -172,7 +172,7 @@ open class InfobaseProvider : MainAPI() {
 
     private val itemsPerPage = 12
     private val batchSize = 6
-    private val listTimeoutMs = 12_000L
+    private val listTimeoutMs = 8_000L
 
     private val videoExt = Regex("\\.(mp4|mkv|avi|webm|mov|m4v)$", RegexOption.IGNORE_CASE)
     // Matches SxxExx and SxxEPxx
@@ -226,43 +226,48 @@ open class InfobaseProvider : MainAPI() {
 
     // ── Section building ──────────────────────────────────────────────────────
 
-    private suspend fun buildFlatSection(key: String): List<FlatEntry> {
-        val def = sectionDefs[key] ?: return emptyList()
+    private suspend fun buildFlatSection(key: String): List<FlatEntry> = coroutineScope {
+        val def = sectionDefs[key] ?: return@coroutineScope emptyList()
         val isSeries = def.type == TvType.TvSeries || def.type == TvType.Anime
 
-        // Each root is isolated: one failing root won't kill other roots
-        val items = def.roots.flatMap { root ->
-            runCatching {
-                val url = "$mainUrl/${root.trimStart('/')}/"
-                val rows = listFolder(url)
+        // Fetch ALL roots in parallel — sequential was the bug (4 roots × 8s = 32s timeout)
+        val items = def.roots.map { root ->
+            async {
+                runCatching {
+                    val url = "$mainUrl/${root.trimStart('/')}/"
+                    val rows = listFolder(url)
 
-                if (isSeries) {
-                    // Series section: each subfolder = one show
-                    rows.filter { it.isFolder }.map { FlatEntry(it.name, it.url) }
-                } else {
-                    // Movie section: direct .mp4 files + year-group subfolders
-                    val directMovies = rows
-                        .filter { !it.isFolder && videoExt.containsMatchIn(it.name) }
-                        .map { FlatEntry(cleanFileTitle(it.name), it.url) }
+                    if (isSeries) {
+                        rows.filter { it.isFolder }.map { FlatEntry(it.name, it.url) }
+                    } else {
+                        val directMovies = rows
+                            .filter { !it.isFolder && videoExt.containsMatchIn(it.name) }
+                            .map { FlatEntry(cleanFileTitle(it.name), it.url) }
 
-                    val fromFolders = rows.filter { it.isFolder }.flatMap { folder ->
-                        runCatching {
-                            if (yearFolderRegex.matches(folder.name)) {
-                                // Year bucket (e.g. "2025", "2025-26") — expand to get movies inside
-                                listFolder(folder.url)
-                                    .filter { !it.isFolder && videoExt.containsMatchIn(it.name) }
-                                    .map { FlatEntry(cleanFileTitle(it.name), it.url) }
-                            } else {
-                                // Named folder treated as a single item (old-style movie subfolder)
-                                listOf(FlatEntry(folder.name, folder.url))
+                        // Expand year-bucket folders in parallel too
+                        val yearFolders = rows.filter { it.isFolder && yearFolderRegex.matches(it.name) }
+                        val namedFolders = rows.filter { it.isFolder && !yearFolderRegex.matches(it.name) }
+
+                        val fromYearFolders = yearFolders.map { folder ->
+                            async {
+                                runCatching {
+                                    listFolder(folder.url)
+                                        .filter { !it.isFolder && videoExt.containsMatchIn(it.name) }
+                                        .map { FlatEntry(cleanFileTitle(it.name), it.url) }
+                                }.getOrElse { emptyList() }
                             }
-                        }.getOrElse { emptyList() }
+                        }.awaitAll().flatten()
+
+                        // Named non-year folders treated as a single item each
+                        val fromNamedFolders = namedFolders.map { FlatEntry(it.name, it.url) }
+
+                        directMovies + fromYearFolders + fromNamedFolders
                     }
-                    directMovies + fromFolders
-                }
-            }.getOrElse { emptyList<FlatEntry>() }  // root-level isolation
-        }
-        return items.distinctBy { it.url }
+                }.getOrElse { emptyList<FlatEntry>() }
+            }
+        }.awaitAll().flatten()
+
+        items.distinctBy { it.url }
     }
 
     // Section-level isolation: a section throwing returns empty instead of crashing
