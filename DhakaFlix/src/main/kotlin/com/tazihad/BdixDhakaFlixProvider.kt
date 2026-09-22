@@ -165,7 +165,6 @@ open class BdixDhakaFlixProvider : MainAPI() {
         "7|Foreign Language Movies/Chinese Language/" to "Chinese Movies",
         // Server 9
         "9|Anime %26 Cartoon TV Series/Anime-TV Series ♥%20 A%20 —%20 F/" to "Anime TV Series",
-        "9|KOREAN TV %26 WEB Series/" to "KOREAN TV & WEB Series",
         "9|Documentary/" to "Documentary",
         "9|Awards %26 TV Shows/%23 TV SPECIAL %26 SHOWS/" to "TV SPECIAL & SHOWS",
         "9|Awards %26 TV Shows/%23 AWARDS/" to "Awards",
@@ -180,7 +179,8 @@ open class BdixDhakaFlixProvider : MainAPI() {
         "14|Animation Movies (1080p)/" to "Animation Movies",
         "14|English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
         "14|Hindi Movies/($year)/" to "Hindi Movies",
-        "14|SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies Hindi Dubbed"
+        "14|SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies Hindi Dubbed",
+        "14|/KOREAN TV %26 WEB Series/" to "Korean TV & WEB Series"
     )
 
     // Number of items to load per page
