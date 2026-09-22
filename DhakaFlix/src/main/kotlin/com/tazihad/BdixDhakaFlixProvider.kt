@@ -44,12 +44,23 @@ open class BdixDhakaFlixProvider : MainAPI() {
 
     protected val year: Int = Calendar.getInstance().get(Calendar.YEAR)
 
+    // Placeholder used in year-based main page sections. It is resolved to the
+    // current year at load time and pagination automatically falls back to
+    // previous years (year - 1, year - 2, ...) until content is exhausted.
+    private val yearPlaceholder = "__YEAR__"
+
+    // Stop stepping back through older years once we reach this floor.
+    private val yearFallbackMinYear = 1960
+
     protected data class LocalServer(
         val id: String,
         val url: String,
         val serverName: String,
         val tvSeriesKeyword: List<String>
     )
+
+    // Lightweight entry parsed from a folder listing row (name + relative href).
+    private data class RowEntry(val name: String, val href: String)
 
     protected open val servers = listOf(
         LocalServer("7", "http://172.16.50.7", "DHAKA-FLIX-7", emptyList()),
@@ -97,6 +108,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
         private const val POSTER_CACHE_DURATION = 1 * 60 * 60 * 1000L // 1 hour (reduced from 2)
         private const val SEARCH_CACHE_DURATION = 30 * 60 * 1000L // 30 minutes (reduced from 1 hour)  
         private const val TMDB_CACHE_DURATION = 15 * 60 * 1000L // 15 minutes (reduced from 30)
+        private const val YEAR_ROWS_CACHE_DURATION = 30 * 60 * 1000L // 30 minutes for per-year listing rows
         private const val BATCH_SIZE = 6 // Increased for better performance
         
         @Synchronized
@@ -111,12 +123,14 @@ open class BdixDhakaFlixProvider : MainAPI() {
         private val tmdbDetailsCache = Collections.synchronizedMap(mutableMapOf<String, Pair<TmdbDetails?, Long>>())
         private val seasonDetailsCache = Collections.synchronizedMap(mutableMapOf<String, Pair<TmdbSeasonDetails?, Long>>())
         private val bulkSeasonCache = Collections.synchronizedMap(mutableMapOf<String, Pair<Map<Int, TmdbSeasonDetails?>, Long>>())
+        private val yearRowsCache = Collections.synchronizedMap(mutableMapOf<String, Pair<List<RowEntry>?, Long>>())
 
         fun getPosterCache(): MutableMap<String, Pair<String?, Long>> = posterCache
         fun getSearchCache(): MutableMap<String, Pair<TmdbSearchResult?, Long>> = searchCache
         fun getTmdbDetailsCache(): MutableMap<String, Pair<TmdbDetails?, Long>> = tmdbDetailsCache
         fun getSeasonDetailsCache(): MutableMap<String, Pair<TmdbSeasonDetails?, Long>> = seasonDetailsCache
         fun getBulkSeasonCache(): MutableMap<String, Pair<Map<Int, TmdbSeasonDetails?>, Long>> = bulkSeasonCache
+        fun getYearRowsCache(): MutableMap<String, Pair<List<RowEntry>?, Long>> = yearRowsCache
 
         fun <T> getFromCache(
             cache: MutableMap<String, Pair<T?, Long>>,
@@ -159,36 +173,37 @@ open class BdixDhakaFlixProvider : MainAPI() {
                 getTmdbDetailsCache().clear()
                 getSeasonDetailsCache().clear()
                 getBulkSeasonCache().clear()
+                getYearRowsCache().clear()
             }
         }
     }
 
     override val mainPage = mainPageOf(
         // English 720p
-        "7|English Movies/($year)/" to "English Movies (720p)",
+        "7|English Movies/($yearPlaceholder)/" to "English Movies (720p)",
         // English 1080p
-        "14|English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
+        "14|English Movies (1080p)/($yearPlaceholder) 1080p/" to "English Movies (1080p)",
         // TV Series (all letter ranges combined)
         "12|__tv_series_all__" to "TV Series",
         // Anime
         "9|Anime %26 Cartoon TV Series/Anime-TV Series ♥%20 A%20 —%20 F/" to "Anime TV Series",
         "14|Animation Movies (1080p)/" to "Anime Movies",
         // Movies
-        "14|Hindi Movies/($year)/" to "Hindi Movies",
-        "14|SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies",
+        "14|Hindi Movies/($yearPlaceholder)/" to "Hindi Movies",
+        "14|SOUTH INDIAN MOVIES/Hindi Dubbed/($yearPlaceholder)/" to "South Movies",
         "14|/KOREAN TV %26 WEB Series/" to "Korean TV & WEB Series",
         // Server 7 movies
         "7|Foreign Language Movies/Japanese Language/" to "Japanese Movies",
         "7|Foreign Language Movies/Korean Language/" to "Korean Movies",
         "7|Foreign Language Movies/Bangla Dubbing Movies/" to "Bangla Dubbing Movies",
         "7|Foreign Language Movies/Pakistani Movie/" to "Pakistani Movies",
-        "7|Kolkata Bangla Movies/(2022)/" to "Kolkata Bangla Movies",
+        "7|Kolkata Bangla Movies/($yearPlaceholder)/" to "Kolkata Bangla Movies",
         "7|Foreign Language Movies/Chinese Language/" to "Chinese Movies",
         // Server 9 extras
         "9|Documentary/" to "Documentary",
         "9|Awards %26 TV Shows/%23 TV SPECIAL %26 SHOWS/" to "TV SPECIAL & SHOWS",
         "9|Awards %26 TV Shows/%23 AWARDS/" to "Awards",
-        "9|WWE %26 AEW Wrestling/WWE Wrestling/%28$year%29%20PPV/" to "WWE PPV",
+        "9|WWE %26 AEW Wrestling/WWE Wrestling/%28$yearPlaceholder%29%20PPV/" to "WWE PPV",
         "9|WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE",
         "9|WWE %26 AEW Wrestling/AEW Wrestling/" to "AEW"
     )
@@ -262,7 +277,14 @@ open class BdixDhakaFlixProvider : MainAPI() {
     ): HomePageResponse = coroutineScope {
         val (server, path) = resolveServer(request.data)
         val isWrestlingSection = isWrestling(path)
-        
+
+        // Year-based sections start at the current year and automatically fall
+        // back to previous years (year - 1, year - 2, ...) when the current
+        // year's content is exhausted.
+        if (path.contains(yearPlaceholder)) {
+            return@coroutineScope getYearFallbackHomePage(page, request, server, path, isWrestlingSection)
+        }
+
         // Combined sections merge multiple sub-folders into one listing
         val rows = if (path == combinedTvSeriesKey) {
             combinedTvSeriesPaths.flatMap { subPath ->
@@ -300,6 +322,85 @@ open class BdixDhakaFlixProvider : MainAPI() {
         newHomePageResponse(request.name, home, hasNextPage)
     }
 
+    // Fetch (and cache) the listing rows for a single year of a year-based section.
+    // The path template is resolved by swapping the year placeholder for the
+    // requested year. Missing/empty year folders return an empty list.
+    private suspend fun getYearRows(
+        server: LocalServer,
+        pathTemplate: String,
+        targetYear: Int
+    ): List<RowEntry> {
+        val providerCache = getProviderCache(name)
+        val key = "${server.id}|$pathTemplate|$targetYear"
+        providerCache.getFromCache(providerCache.getYearRowsCache(), key, YEAR_ROWS_CACHE_DURATION)?.let { return it }
+
+        val path = pathTemplate.replace(yearPlaceholder, targetYear.toString())
+        val rows = runCatching {
+            app.get("${server.url}/${server.serverName}/$path").document.select("tbody > tr").drop(2)
+                .mapNotNull { post ->
+                    val a = post.select("td.fb-n > a")
+                    val name = a.text()
+                    val href = a.attr("href")
+                    if (name.isBlank() || href.isBlank()) null else RowEntry(name, href)
+                }
+        }.getOrDefault(emptyList())
+
+        providerCache.addToCache(providerCache.getYearRowsCache(), key, rows)
+        return rows
+    }
+
+    // Home page for year-based sections. Content is served from the current year
+    // first; when the current year is exhausted pagination continues with the
+    // previous year, then the year before that, and so on (single, un-split section).
+    private suspend fun getYearFallbackHomePage(
+        page: Int,
+        request: MainPageRequest,
+        server: LocalServer,
+        pathTemplate: String,
+        isWrestlingSection: Boolean
+    ): HomePageResponse = coroutineScope {
+        val safePage = maxOf(1, page)
+        val startIndex = (safePage - 1) * itemsPerPage
+        val endIndex = startIndex + itemsPerPage
+
+        // Accumulate rows walking backwards through the years until this page is
+        // covered or there are no more year folders to read.
+        val accumulated = mutableListOf<RowEntry>()
+        var currentYear = year
+        while (accumulated.size < endIndex && currentYear >= yearFallbackMinYear) {
+            val rows = getYearRows(server, pathTemplate, currentYear)
+            if (rows.isNotEmpty()) {
+                accumulated.addAll(rows)
+            }
+            currentYear--
+        }
+        val ranOutOfYears = currentYear < yearFallbackMinYear
+
+        val slice = if (startIndex < accumulated.size) {
+            accumulated.subList(startIndex, minOf(endIndex, accumulated.size))
+        } else {
+            emptyList()
+        }
+
+        val home = slice.chunked(BATCH_SIZE).flatMap { chunk ->
+            chunk.map { row ->
+                async {
+                    getPostResult(
+                        rawName = row.name,
+                        rawUrl = server.url + row.href,
+                        serverUrl = server.url,
+                        loadTmdbData = isWrestlingSection,
+                        loadLocalPosters = !isWrestlingSection
+                    )
+                }
+            }.awaitAll()
+        }
+
+        val hasNextPage = !ranOutOfYears || accumulated.size > endIndex
+
+        newHomePageResponse(request.name, home, hasNextPage)
+    }
+
     private fun cleanFolderName(name: String): String {
         return name.replace(Regex("\\d{3,4}p"), "") // Remove quality tags
             .replace(Regex("\\bHDTV\\b", RegexOption.IGNORE_CASE), "") // Remove HDTV tag
@@ -328,8 +429,23 @@ open class BdixDhakaFlixProvider : MainAPI() {
         loadLocalPosters: Boolean = false
     ): SearchResponse {
         val folderHtml = post.select("td.fb-n > a")
-        val rawName = folderHtml.text()
-        val url = serverUrl + folderHtml.attr("href")
+        return getPostResult(
+            rawName = folderHtml.text(),
+            rawUrl = serverUrl + folderHtml.attr("href"),
+            serverUrl = serverUrl,
+            loadTmdbData = loadTmdbData,
+            loadLocalPosters = loadLocalPosters
+        )
+    }
+
+    private suspend fun getPostResult(
+        rawName: String,
+        rawUrl: String,
+        serverUrl: String,
+        loadTmdbData: Boolean = false,
+        loadLocalPosters: Boolean = false
+    ): SearchResponse {
+        val url = rawUrl
         val name = if (isWrestling(url)) cleanFolderName(rawName) else cleanNameForSearch(rawName)  // Keep full folder names for wrestling
         
         // Determine content type based on URL
