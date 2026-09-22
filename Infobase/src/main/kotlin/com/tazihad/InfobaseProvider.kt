@@ -142,7 +142,7 @@ open class InfobaseProvider : MainAPI() {
         ),
         "animation" to SectionDef(
             "Animation",
-            roots = listOf("Infobase/hdd-1/Animation", "Infobase/hdd-3/Animated")
+            roots = listOf("Infobase/hdd-1/Animation/English", "Infobase/hdd-3/Animated")
         ),
         "chinese-japanese" to SectionDef(
             "Chinese / Japanese",
