@@ -92,22 +92,23 @@ open class CityPlexProvider : MainAPI() {
     // into a flat list of actual content. Everything else is listed directly.
 
     override val mainPage = mainPageOf(
-        // Server 22 - Wrestling & TV
-        "22|WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE",
-        "22|Awards %26 TV Shows/" to "Awards & TV Shows",
-        "22|Documentary/" to "Documentary",
-        "22|Islamic WebSeries/" to "Islamic WebSeries",
-        // Combined sections (flat expanded lists)
+        // Movies (by language)
+        "1|__english__" to "English Movies",
+        "2|English Movies (1080p)/" to "English Movies (1080p)",
         "1|__hindi__" to "Hindi Movies",
         "1|__south__" to "South Indian Movies",
-        "1|__animation__" to "Animation Movies",
-        "4|Anime %26 Cartoon TV Series/" to "Anime & Cartoon TV Series",
         "1|__bangla__" to "Bangla Movies",
-        "1|__english__" to "English Movies",
-        "6|IMDb Top-250 Movies/" to "IMDb Top-250 Movies",
-        "2|English Movies (1080p)/" to "English Movies (1080p)",
+        "8|Kolkata Bangla Movies/" to "Kolkata Bangla Movies",
         "1|__foreign__" to "Foreign Language Movies",
-        "8|Kolkata Bangla Movies/" to "Kolkata Bangla Movies"
+        "6|IMDb Top-250 Movies/" to "IMDb Top-250 Movies",
+        // Anime & Animation
+        "4|Anime %26 Cartoon TV Series/" to "Anime & Cartoon TV Series",
+        "1|__animation__" to "Animation Movies",
+        // TV Shows, Documentaries & Sports
+        "22|Documentary/" to "Documentary",
+        "22|Awards %26 TV Shows/" to "Awards & TV Shows",
+        "22|Islamic WebSeries/" to "Islamic WebSeries",
+        "22|WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE"
     )
 
     private val expandSections = setOf(
