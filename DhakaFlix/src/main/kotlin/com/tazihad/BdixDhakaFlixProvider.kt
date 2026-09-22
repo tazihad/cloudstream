@@ -52,6 +52,12 @@ open class BdixDhakaFlixProvider : MainAPI() {
     // Stop stepping back through older years once we reach this floor.
     private val yearFallbackMinYear = 1960
 
+    // Hard cap for a single section's network work. CloudStream wraps ALL main
+    // page sections in ONE 2-minute timeout, so a slow or unreachable server
+    // (e.g. server 9) must never stall the whole provider: each section gives up
+    // after this budget and returns whatever it has (possibly empty).
+    private val sectionFetchTimeoutMs = 15_000L
+
     protected data class LocalServer(
         val id: String,
         val url: String,
@@ -287,11 +293,15 @@ open class BdixDhakaFlixProvider : MainAPI() {
 
         // Combined sections merge multiple sub-folders into one listing
         val rows = if (path == combinedTvSeriesKey) {
-            combinedTvSeriesPaths.flatMap { subPath ->
-                app.get("${server.url}/${server.serverName}/$subPath").document.select("tbody > tr").drop(2)
-            }
+            withTimeoutOrNull(sectionFetchTimeoutMs) {
+                combinedTvSeriesPaths.flatMap { subPath ->
+                    app.get("${server.url}/${server.serverName}/$subPath").document.select("tbody > tr").drop(2)
+                }
+            }.orEmpty()
         } else {
-            app.get("${server.url}/${server.serverName}/$path").document.select("tbody > tr").drop(2)
+            withTimeoutOrNull(sectionFetchTimeoutMs) {
+                app.get("${server.url}/${server.serverName}/$path").document.select("tbody > tr").drop(2)
+            }.orEmpty()
         }
         val totalItems = rows.size
         
@@ -364,17 +374,24 @@ open class BdixDhakaFlixProvider : MainAPI() {
         val endIndex = startIndex + itemsPerPage
 
         // Accumulate rows walking backwards through the years until this page is
-        // covered or there are no more year folders to read.
+        // covered or there are no more year folders to read. The whole walk is
+        // time-bounded so a slow/unreachable server can't stall this section.
         val accumulated = mutableListOf<RowEntry>()
         var currentYear = year
-        while (accumulated.size < endIndex && currentYear >= yearFallbackMinYear) {
-            val rows = getYearRows(server, pathTemplate, currentYear)
-            if (rows.isNotEmpty()) {
-                accumulated.addAll(rows)
+        withTimeoutOrNull(sectionFetchTimeoutMs) {
+            while (accumulated.size < endIndex && currentYear >= yearFallbackMinYear) {
+                val rows = getYearRows(server, pathTemplate, currentYear)
+                if (rows.isNotEmpty()) {
+                    accumulated.addAll(rows)
+                }
+                currentYear--
             }
-            currentYear--
         }
         val ranOutOfYears = currentYear < yearFallbackMinYear
+        // If we neither filled this page nor ran out of years, the walk was cut
+        // short by the section budget (slow/unreachable server). Stop paging so
+        // the app doesn't loop with more 15s timeouts.
+        val timedOut = accumulated.size < endIndex && !ranOutOfYears
 
         val slice = if (startIndex < accumulated.size) {
             accumulated.subList(startIndex, minOf(endIndex, accumulated.size))
@@ -396,7 +413,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
             }.awaitAll()
         }
 
-        val hasNextPage = !ranOutOfYears || accumulated.size > endIndex
+        val hasNextPage = !timedOut && (!ranOutOfYears || accumulated.size > endIndex)
 
         newHomePageResponse(request.name, home, hasNextPage)
     }

@@ -131,6 +131,10 @@ open class CityPlexProvider : MainAPI() {
     private val maxGroupDepth = 4
     private val batchSize = 6
 
+    // Bound single folder-list requests so a slow/unreachable server can't stall
+    // the whole home page (CloudStream wraps all sections in one big timeout).
+    private val sectionFetchTimeoutMs = 15_000L
+
     private val flatListMutex = Mutex()
 
     // Grouping folder detection: year folders (e.g. "(2019)", "(1995) & Before",
@@ -150,6 +154,28 @@ open class CityPlexProvider : MainAPI() {
 
     private fun isGroupingName(name: String): Boolean {
         return yearFolderRegex.matches(name.trim()) || groupingNames.contains(name.trim())
+    }
+
+    // Yields the year for year grouping folders (e.g. "(2026)", "(1994) & Before",
+    // "(2026) 1080p") so they can be ordered newest-first, otherwise null.
+    private fun groupingYear(name: String): Int? {
+        return Regex("(19|20)\\d{2}").find(name)?.value?.toIntOrNull()
+    }
+
+    // Year grouping folders are ordered newest-first (2026 -> 1995) while
+    // non-year folders (language groupings, collections, ...) keep their
+    // original server order. Stable sort preserves the rest of the listing.
+    private fun sortGroupingEntries(list: List<DirEntry>): List<DirEntry> {
+        return list.sortedWith { a, b ->
+            val yearA = groupingYear(a.name)
+            val yearB = groupingYear(b.name)
+            when {
+                yearA != null && yearB != null -> yearB.compareTo(yearA)
+                yearA != null -> -1
+                yearB != null -> 1
+                else -> 0
+            }
+        }
     }
 
     private fun serverById(id: String): LocalServer =
@@ -267,12 +293,14 @@ open class CityPlexProvider : MainAPI() {
     // -------------------------------------------------------------------------
 
     private suspend fun listFolder(server: LocalServer, path: String): List<DirEntry> {
-        return app.get("${server.url}/$path").document.select("tbody > tr").drop(2).mapNotNull { row ->
-            val a = row.selectFirst("td.fb-n > a") ?: return@mapNotNull null
-            val img = row.selectFirst("td.fb-i > img")?.attr("alt")
-            if (img != "folder") return@mapNotNull null
-            DirEntry(a.text(), server.url + a.attr("href"), server)
-        }
+        return withTimeoutOrNull(sectionFetchTimeoutMs) {
+            app.get("${server.url}/$path").document.select("tbody > tr").drop(2).mapNotNull { row ->
+                val a = row.selectFirst("td.fb-n > a") ?: return@mapNotNull null
+                val img = row.selectFirst("td.fb-i > img")?.attr("alt")
+                if (img != "folder") return@mapNotNull null
+                DirEntry(a.text(), server.url + a.attr("href"), server)
+            }
+        }.orEmpty()
     }
 
     private suspend fun expandEntry(entry: DirEntry, depth: Int): List<FlatEntry> = coroutineScope {
@@ -285,18 +313,20 @@ open class CityPlexProvider : MainAPI() {
             return@coroutineScope listOf(FlatEntry(entry.name, entry.url))
         }
 
-        children.chunked(batchSize).flatMap { batch ->
+        sortGroupingEntries(children).chunked(batchSize).flatMap { batch ->
             batch.map { child -> async { expandEntry(child, depth + 1) } }.awaitAll()
         }.flatten()
     }
 
     private suspend fun listFolderFromUrl(entry: DirEntry): List<DirEntry> {
-        return app.get(entry.url).document.select("tbody > tr").drop(2).mapNotNull { row ->
-            val a = row.selectFirst("td.fb-n > a") ?: return@mapNotNull null
-            val img = row.selectFirst("td.fb-i > img")?.attr("alt")
-            if (img != "folder") return@mapNotNull null
-            DirEntry(a.text(), entry.server.url + a.attr("href"), entry.server)
-        }
+        return withTimeoutOrNull(sectionFetchTimeoutMs) {
+            app.get(entry.url).document.select("tbody > tr").drop(2).mapNotNull { row ->
+                val a = row.selectFirst("td.fb-n > a") ?: return@mapNotNull null
+                val img = row.selectFirst("td.fb-i > img")?.attr("alt")
+                if (img != "folder") return@mapNotNull null
+                DirEntry(a.text(), entry.server.url + a.attr("href"), entry.server)
+            }
+        }.orEmpty()
     }
 
     private suspend fun buildFlatList(request: MainPageRequest): List<FlatEntry> = coroutineScope {
@@ -318,7 +348,7 @@ open class CityPlexProvider : MainAPI() {
         }
 
         if (expand) {
-            entries.chunked(batchSize).flatMap { batch ->
+            sortGroupingEntries(entries).chunked(batchSize).flatMap { batch ->
                 batch.map { entry -> async { expandEntry(entry, 0) } }.awaitAll()
             }.flatten()
         } else {
