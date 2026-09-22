@@ -37,7 +37,7 @@ open class RoyalFlixProvider : MainAPI() {
     override val hasDownloadSupport = true
     override val hasQuickSearch = false
     override val instantLinkLoading = true
-    override var lang = "en"
+    override var lang = "bn"
     override val supportedTypes = setOf(
         TvType.Movie, TvType.AnimeMovie, TvType.TvSeries, TvType.Anime
     )
@@ -144,11 +144,9 @@ open class RoyalFlixProvider : MainAPI() {
     // Hard cap for a single folder listing request so a slow server can't stall
     // the whole home page (CloudStream wraps all sections in one big timeout).
     private val sectionFetchTimeoutMs = 15_000L
-    private val posterFetchTimeoutMs = 3_000L
     private val maxCrawlDepth = 6
 
     private val videoExt = Regex("\\.(mp4|mkv|avi|webm|mov|m4v)$", RegexOption.IGNORE_CASE)
-    private val imageExt = Regex("\\.(jpg|jpeg|png|webp)$", RegexOption.IGNORE_CASE)
     private val episodeRegex = Regex("[Ss]\\d{1,2}[Ee](\\d{1,3})")
 
     private data class RowEntry(val name: String, val url: String, val isFolder: Boolean)
@@ -156,7 +154,6 @@ open class RoyalFlixProvider : MainAPI() {
 
     private companion object {
         private val flatCache: MutableMap<String, List<FlatEntry>> = Collections.synchronizedMap(mutableMapOf())
-        private val posterCache: MutableMap<String, String?> = Collections.synchronizedMap(mutableMapOf())
         private val searchCache: MutableMap<String, Pair<RoyalFlixTmdbSearchResult?, Long>> =
             Collections.synchronizedMap(mutableMapOf())
         private val seasonBulkCache: MutableMap<String, Pair<Map<Int, RoyalFlixTmdbSeasonDetails?>, Long>> =
@@ -307,29 +304,6 @@ open class RoyalFlixProvider : MainAPI() {
         return list
     }
 
-    // -------------------------------------------------------------------------
-    // Posters
-    // -------------------------------------------------------------------------
-
-    private fun findPosterFromRows(rows: List<RowEntry>): String? {
-        val images = rows.filter { !it.isFolder && imageExt.containsMatchIn(it.name) }
-        val lower = { name: String -> name.lowercase() }
-        return images.firstOrNull { lower(it.name).contains("poster") }?.url
-            ?: images.firstOrNull { lower(it.name).contains("cover") }?.url
-            ?: images.firstOrNull { lower(it.name).contains("landscape") }?.url
-            ?: images.firstOrNull { lower(it.name).contains("thumb") }?.url
-            ?: images.firstOrNull()?.url
-    }
-
-    private suspend fun findPosterLight(url: String): String? {
-        posterCache[url]?.let { return it }
-        val poster = withTimeoutOrNull(posterFetchTimeoutMs) {
-            runCatching { findPosterFromRows(listFolder(url)) }.getOrNull()
-        } ?: null
-        posterCache[url] = poster
-        return poster
-    }
-
     // Cleans a title for TMDb lookups (drops years, quality tags, brackets).
     private fun cleanNameForSearch(name: String): String {
         return name.replace(Regex("\\[.*?\\]"), "")
@@ -390,10 +364,8 @@ open class RoyalFlixProvider : MainAPI() {
         val tvType = def?.type ?: TvType.Movie
         val isMovie = tvType == TvType.Movie || tvType == TvType.AnimeMovie
 
-        // Local poster first, then fall back to a TMDb thumbnail so every title
-        // gets an image even when the folder has no poster.jpg.
-        val localPoster = findPosterLight(entry.url)
-        val posterUrl = localPoster ?: lazyLoadTmdbData(name, isMovie, loadDetails = true)
+        // TMDb poster only — local folder covers are never used.
+        val posterUrl = lazyLoadTmdbData(name, isMovie, loadDetails = true)
             ?.posterPath
             ?.let { RoyalFlixTmdbHelper.getPosterUrl(it) }
 
@@ -496,13 +468,7 @@ open class RoyalFlixProvider : MainAPI() {
 
         val tmdbData = lazyLoadTmdbData(name, isMovie = isMovieContent, loadDetails = true)
 
-        var imageLink = if (isDirectFile) null else findPosterFromRows(rows)
-        if (imageLink == null && folders.isNotEmpty()) {
-            imageLink = findPosterLight(folders.first().url)
-        }
-        if (imageLink == null) {
-            imageLink = tmdbData?.posterPath?.let { RoyalFlixTmdbHelper.getPosterUrl(it, isDetail = true) }
-        }
+        val imageLink = tmdbData?.posterPath?.let { RoyalFlixTmdbHelper.getPosterUrl(it, isDetail = true) }
 
         var tmdbId: Int? = null
         var plot: String? = null

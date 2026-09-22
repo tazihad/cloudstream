@@ -1,5 +1,5 @@
 // use an integer for version numbers
-version = 1
+version = 2
 
 android {
     namespace = "com.tazihad"
@@ -14,4 +14,5 @@ dependencies {
 
 cloudstream {
     description = "RoyalFlix server provider with TMDB metadata"
+    language = "bn"
 }
