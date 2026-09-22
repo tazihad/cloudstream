@@ -3,9 +3,13 @@ package com.tazihad
 import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.LoadResponse.Companion.addImdbId
+import com.lagradost.cloudstream3.LoadResponse.Companion.addTMDbId
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.mainPageOf
@@ -14,13 +18,13 @@ import com.lagradost.cloudstream3.newEpisode
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
-import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -72,6 +76,45 @@ open class CtgHallProvider : MainAPI() {
     private companion object {
         private val flatCache: MutableMap<String, List<FlatEntry>> = Collections.synchronizedMap(mutableMapOf())
         private val posterCache: MutableMap<String, String?> = Collections.synchronizedMap(mutableMapOf())
+        private val searchCache: MutableMap<String, Pair<CtgHallTmdbSearchResult?, Long>> =
+            Collections.synchronizedMap(mutableMapOf())
+        private val seasonBulkCache: MutableMap<String, Pair<Map<Int, CtgHallTmdbSeasonDetails?>, Long>> =
+            Collections.synchronizedMap(mutableMapOf())
+
+        private const val SEARCH_CACHE_DURATION = 30 * 60 * 1000L // 30 minutes
+        private const val TMDB_CACHE_DURATION = 15 * 60 * 1000L // 15 minutes
+    }
+
+    private fun getFromSearchCache(key: String): CtgHallTmdbSearchResult? {
+        synchronized(searchCache) {
+            val (value, timestamp) = searchCache[key] ?: return null
+            return if (System.currentTimeMillis() - timestamp < SEARCH_CACHE_DURATION) value else null
+        }
+    }
+
+    private fun addToSearchCache(key: String, value: CtgHallTmdbSearchResult?) {
+        synchronized(searchCache) {
+            if (searchCache.size > 100) {
+                val currentTime = System.currentTimeMillis()
+                searchCache.entries.removeIf { (currentTime - it.value.second) > SEARCH_CACHE_DURATION }
+                if (searchCache.size > 50) {
+                    val sorted = searchCache.entries.sortedBy { it.value.second }
+                    sorted.take(sorted.size - 50).forEach { searchCache.remove(it.key) }
+                }
+            }
+            searchCache[key] = Pair(value, System.currentTimeMillis())
+        }
+    }
+
+    private fun getBulkSeasonCache(key: String): Map<Int, CtgHallTmdbSeasonDetails?>? {
+        synchronized(seasonBulkCache) {
+            val (value, timestamp) = seasonBulkCache[key] ?: return null
+            return if (System.currentTimeMillis() - timestamp < TMDB_CACHE_DURATION) value else null
+        }
+    }
+
+    private fun putBulkSeasonCache(key: String, value: Map<Int, CtgHallTmdbSeasonDetails?>) {
+        seasonBulkCache[key] = Pair(value, System.currentTimeMillis())
     }
 
     // -------------------------------------------------------------------------
@@ -146,6 +189,57 @@ open class CtgHallProvider : MainAPI() {
         return poster
     }
 
+    // Cleans a title for TMDb lookups (drops years, quality tags, brackets).
+    private fun cleanNameForSearch(name: String): String {
+        return name.replace(Regex("\\[.*?\\]"), "")
+            .replace(Regex("\\s*\\([^)]*\\)"), "")
+            .replace(Regex("(?i)\\b(480p|720p|1080p|2160p|4k|uhd|hdr|web-?dl|blu-?ray|webrip|hdtv)\\b"), "")
+            .replace(Regex("\\.(mp4|mkv|avi|webm|mov|m4v)$", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    // Lazy-loaded (and cached) TMDb search result used for poster fallback on
+    // the main page and for metadata in the detail view. When loadDetails is
+    // false the lookup is queued in the background and null is returned.
+    private suspend fun lazyLoadTmdbData(
+        name: String,
+        isMovie: Boolean,
+        loadDetails: Boolean = false
+    ): CtgHallTmdbSearchResult? = coroutineScope {
+        val cleanName = cleanNameForSearch(name)
+        val cacheKey = "$cleanName:$isMovie"
+
+        getFromSearchCache(cacheKey)?.let { return@coroutineScope it }
+
+        if (!loadDetails) {
+            launch {
+                CtgHallTmdbHelper.searchTmdb(cleanName, isMovie)?.let { result ->
+                    addToSearchCache(cacheKey, result)
+                }
+            }
+            return@coroutineScope null
+        }
+
+        val result = CtgHallTmdbHelper.searchTmdb(cleanName, isMovie)
+        addToSearchCache(cacheKey, result)
+        return@coroutineScope result
+    }
+
+    // Bulk-load all TMDb season data for a series to minimize API calls.
+    private suspend fun bulkLoadTvSeriesData(
+        tmdbId: Int,
+        seasonNumbers: List<Int>
+    ): Map<Int, CtgHallTmdbSeasonDetails?> = coroutineScope {
+        val cacheKey = "$tmdbId:${seasonNumbers.sorted().joinToString(",")}"
+
+        getBulkSeasonCache(cacheKey)?.let { return@coroutineScope it }
+
+        val seasonData = CtgHallTmdbHelper.getAllSeasonDetails(tmdbId, seasonNumbers)
+        putBulkSeasonCache(cacheKey, seasonData)
+        return@coroutineScope seasonData
+    }
+
     // -------------------------------------------------------------------------
     // Search responses
     // -------------------------------------------------------------------------
@@ -161,8 +255,17 @@ open class CtgHallProvider : MainAPI() {
 
     private suspend fun toSearchResponse(entry: FlatEntry, path: String): SearchResponse {
         val name = entry.name.trim()
-        val posterUrl = findPosterLight(entry.url)
-        return newAnimeSearchResponse(name, entry.url, sectionTvType(path)) {
+        val tvType = sectionTvType(path)
+        val isMovie = tvType == TvType.Movie || tvType == TvType.AnimeMovie
+
+        // Local poster first, then fall back to a (cached) TMDb poster so every
+        // title gets an image even when the folder has no poster.jpg.
+        val localPoster = findPosterLight(entry.url)
+        val posterUrl = localPoster ?: lazyLoadTmdbData(name, isMovie)
+            ?.posterPath
+            ?.let { CtgHallTmdbHelper.getPosterUrl(it) }
+
+        return newAnimeSearchResponse(name, entry.url, tvType) {
             if (posterUrl?.isNotEmpty() == true) {
                 this.posterUrl = posterUrl
             }
@@ -261,9 +364,33 @@ open class CtgHallProvider : MainAPI() {
         val name = rawName.trim()
         val isAnime = url.contains("Anime")
 
-        var posterUrl = findPosterFromRows(rows)
-        if (posterUrl == null && folders.isNotEmpty()) {
-            posterUrl = findPosterLight(folders.first().url)
+        // TMDb is looked up by the URL type (Movies -> movie, Shows -> tv); the
+        // actual response type below is decided from the folder structure.
+        val isMovieContent = !url.contains("/Shows/")
+        val tmdbData = lazyLoadTmdbData(name, isMovie = isMovieContent, loadDetails = true)
+
+        var imageLink = findPosterFromRows(rows)
+        if (imageLink == null && folders.isNotEmpty()) {
+            imageLink = findPosterLight(folders.first().url)
+        }
+        if (imageLink == null) {
+            imageLink = tmdbData?.posterPath?.let { CtgHallTmdbHelper.getPosterUrl(it, isDetail = true) }
+        }
+
+        var tmdbId: Int? = null
+        var plot: String? = null
+        var year: Int? = null
+        var rating: Double? = null
+        var imdbId: String? = null
+
+        if (tmdbData != null) {
+            tmdbId = tmdbData.id
+            plot = tmdbData.overview
+            rating = tmdbData.rating
+            year = extractYear(name) ?: tmdbData.releaseDate?.split("-")?.firstOrNull()?.toIntOrNull()
+            imdbId = tmdbId?.let { CtgHallTmdbHelper.getImdbIdFromTmdb(it, isMovie = isMovieContent) }
+        } else {
+            year = extractYear(name)
         }
 
         if (videos.isNotEmpty()) {
@@ -271,41 +398,71 @@ open class CtgHallProvider : MainAPI() {
             // like "Extras" exist alongside).
             val movieType = if (isAnime) TvType.AnimeMovie else TvType.Movie
             newMovieLoadResponse(name, url, movieType, videos.first().url) {
-                this.posterUrl = posterUrl
+                this.posterUrl = imageLink
+                this.plot = plot
+                this.year = year
+                this.score = rating?.let { Score.from10(it) }
+                addTMDbId(tmdbId?.toString())
+                addImdbId(imdbId)
             }
         } else if (folders.isNotEmpty()) {
             // Season sub-folders mean this is a series.
-            val episodes = buildEpisodes(folders)
+            val seasonNumbers = folders.mapNotNull { parseSeasonNumber(it.name) }.distinct()
+            val bulkSeasonData = if (tmdbId != null && seasonNumbers.isNotEmpty()) {
+                bulkLoadTvSeriesData(tmdbId, seasonNumbers)
+            } else emptyMap()
+
+            val episodes = buildEpisodes(folders, bulkSeasonData)
             if (episodes.isEmpty()) {
                 throw RuntimeException("No episodes found")
             }
             val tvType = if (isAnime) TvType.Anime else TvType.TvSeries
             newTvSeriesLoadResponse(name, url, tvType, episodes) {
-                this.posterUrl = posterUrl
+                this.posterUrl = imageLink
+                this.plot = plot
+                this.year = year
+                this.score = rating?.let { Score.from10(it) }
+                addTMDbId(tmdbId?.toString())
+                addImdbId(imdbId)
             }
         } else {
             throw RuntimeException("No playable content found")
         }
     }
 
-    private suspend fun buildEpisodes(seasonFolders: List<RowEntry>): List<Episode> = coroutineScope {
+    private suspend fun buildEpisodes(
+        seasonFolders: List<RowEntry>,
+        bulkSeasonData: Map<Int, CtgHallTmdbSeasonDetails?> = emptyMap()
+    ): List<Episode> = coroutineScope {
         val sortedFolders = seasonFolders.sortedBy { parseSeasonNumber(it.name) ?: Int.MAX_VALUE }
         val episodes = sortedFolders.flatMapIndexed { index, seasonFolder ->
             val seasonNumber = parseSeasonNumber(seasonFolder.name) ?: (index + 1)
+            val seasonData = bulkSeasonData[seasonNumber]
             val seasonFiles = listFolder(seasonFolder.url, foldersOnly = false)
             val seasonVideos = seasonFiles
                 .filter { videoExt.containsMatchIn(it.name) }
                 .sortedBy { episodeNumber(it.name) ?: Int.MAX_VALUE }
 
             seasonVideos.mapIndexed { fileIndex, video ->
+                val episodeNum = episodeNumber(video.name) ?: (fileIndex + 1)
+                val episodeDetails = CtgHallTmdbHelper.getEpisodeFromSeasonData(seasonData, episodeNum)
+
                 newEpisode(video.url) {
-                    this.name = cleanEpisodeName(video.name)
+                    this.name = episodeDetails?.name ?: cleanEpisodeName(video.name)
                     this.season = seasonNumber
-                    this.episode = episodeNumber(video.name) ?: (fileIndex + 1)
+                    this.episode = episodeNum
+                    this.description = episodeDetails?.overview
+                    episodeDetails?.stillPath?.let { still ->
+                        this.posterUrl = CtgHallTmdbHelper.getStillUrl(still)
+                    }
                 }
             }
         }
         episodes
+    }
+
+    private fun extractYear(name: String): Int? {
+        return Regex("\\((\\d{4})\\)").find(name)?.groupValues?.get(1)?.toIntOrNull()
     }
 
     // Extracts a season number from common folder patterns ("Season 1", "S01").
