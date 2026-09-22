@@ -258,10 +258,12 @@ open class CtgHallProvider : MainAPI() {
         val tvType = sectionTvType(path)
         val isMovie = tvType == TvType.Movie || tvType == TvType.AnimeMovie
 
-        // Local poster first, then fall back to a (cached) TMDb poster so every
-        // title gets an image even when the folder has no poster.jpg.
+        // Local poster first, then fall back to a TMDb thumbnail so every
+        // title gets an image even when the folder has no poster.jpg. We load
+        // details synchronously here (cached afterwards) so section loads
+        // actually pick up the TMDB thumbnail instead of only seeding a cache.
         val localPoster = findPosterLight(entry.url)
-        val posterUrl = localPoster ?: lazyLoadTmdbData(name, isMovie)
+        val posterUrl = localPoster ?: lazyLoadTmdbData(name, isMovie, loadDetails = true)
             ?.posterPath
             ?.let { CtgHallTmdbHelper.getPosterUrl(it) }
 
