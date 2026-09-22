@@ -14,10 +14,7 @@ class BdixDhakaFlixPlugin : Plugin() {
     override fun load(context: Context) {
         activity = context as AppCompatActivity
         // All providers should be added in this manner. Please don't edit the providers list directly.
-        registerMainAPI(BdixDhakaFlix14Provider())
-        registerMainAPI(BdixDhakaFlix12Provider())
-        registerMainAPI(BdixDhakaFlix9Provider())
-        registerMainAPI(BdixDhakaFlix7Provider())
+        registerMainAPI(BdixDhakaFlixProvider())
 
         // Add settings
         openSettings = { ctx ->

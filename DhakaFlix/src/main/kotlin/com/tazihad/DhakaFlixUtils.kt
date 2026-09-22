@@ -83,7 +83,7 @@ object DhakaFlixUtils {
                 "application/json".toMediaType()
             )
         val doc = app.post("$mainUrl/$serverName/", requestBody = body).text
-        val searchJson = AppUtils.parseJson<BdixDhakaFlix14Provider.SearchResult>(doc)
+        val searchJson = AppUtils.parseJson<BdixDhakaFlixProvider.SearchResult>(doc)
         
         // Process matches quickly without poster fetching
         val matches = searchJson.search.take(40).filter { post -> post.size == null }        // Process matches with poster loading in batches for better performance
@@ -131,7 +131,7 @@ object DhakaFlixUtils {
                         "application/json".toMediaType()
                     )
                 val fallbackDoc = app.post("$mainUrl/$serverName/", requestBody = fallbackBody).text
-                val fallbackJson = AppUtils.parseJson<BdixDhakaFlix14Provider.SearchResult>(fallbackDoc)
+                val fallbackJson = AppUtils.parseJson<BdixDhakaFlixProvider.SearchResult>(fallbackDoc)
                   // Add relevant fallback results (limit to avoid too many results)
                 val fallbackMatches = fallbackJson.search.filter { post -> 
                     post.size == null && 

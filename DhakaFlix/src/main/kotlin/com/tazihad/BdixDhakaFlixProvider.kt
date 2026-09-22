@@ -29,9 +29,9 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.Collections
 
-open class BdixDhakaFlix14Provider : MainAPI() {
-    override var mainUrl = "http://172.16.50.14"
-    override var name = "(BDIX) DhakaFlix 14"
+open class BdixDhakaFlixProvider : MainAPI() {
+    override var mainUrl = "http://172.16.50.7"
+    override var name = "DhakaFlix"
     override val hasMainPage = true
     override val hasDownloadSupport = true
     override val hasQuickSearch = false
@@ -40,6 +40,39 @@ open class BdixDhakaFlix14Provider : MainAPI() {
     override val supportedTypes = setOf(
         TvType.Movie, TvType.AnimeMovie, TvType.TvSeries, TvType.Anime
     )
+
+    protected val year = 2025
+
+    protected data class LocalServer(
+        val id: String,
+        val url: String,
+        val serverName: String,
+        val tvSeriesKeyword: List<String>
+    )
+
+    protected open val servers = listOf(
+        LocalServer("7", "http://172.16.50.7", "DHAKA-FLIX-7", emptyList()),
+        LocalServer("9", "http://172.16.50.9", "DHAKA-FLIX-9", listOf("Awards", "WWE", "KOREAN", "Documentary", "Anime")),
+        LocalServer("12", "http://172.16.50.12", "DHAKA-FLIX-12", listOf("TV-WEB-Series")),
+        LocalServer("14", "http://172.16.50.14", "DHAKA-FLIX-14", listOf("KOREAN%20TV%20%26%20WEB%20Series"))
+    )
+
+    private val animeKeyword = listOf("Anime%20%26%20Cartoon%20TV%20Series")
+
+    private fun serverById(id: String): LocalServer =
+        servers.firstOrNull { it.id == id } ?: servers.last()
+
+    private fun serverForUrl(url: String): LocalServer =
+        servers.firstOrNull { url == it.url || url.startsWith("${it.url}/") } ?: servers.last()
+
+    private fun resolveServer(data: String): Pair<LocalServer, String> {
+        val separator = data.indexOf('|')
+        return if (separator > 0) {
+            serverById(data.substring(0, separator)) to data.substring(separator + 1)
+        } else {
+            servers.last() to data
+        }
+    }
 
     init {
         // Clear provider cache on initialization
@@ -50,11 +83,6 @@ open class BdixDhakaFlix14Provider : MainAPI() {
     protected fun finalize() {
         getProviderCache(name).clearCache()
     }
-
-    open val year = 2025
-    open val tvSeriesKeyword: List<String>? = listOf("KOREAN%20TV%20%26%20WEB%20Series")
-    open val animeKeyword: List<String>? = listOf("Anime%20%26%20Cartoon%20TV%20Series")
-    open val serverName: String = "DHAKA-FLIX-14"    // Simple cache implementation with optimized settings
     companion object {
         private val caches = mutableMapOf<String, ProviderCache>()
         private const val POSTER_CACHE_DURATION = 1 * 60 * 60 * 1000L // 1 hour (reduced from 2)
@@ -127,12 +155,35 @@ open class BdixDhakaFlix14Provider : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "Animation Movies (1080p)/" to "Animation Movies",
-        "English Movies (1080p)/($year) 1080p/" to "English Movies",
-        "Hindi Movies/($year)/" to "Hindi Movies",
-        "SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies Hindi Dubbed",
-        "/KOREAN TV %26 WEB Series/" to "Korean TV & WEB Series",
-        "/Anime %26 Cartoon TV Series/" to "Anime & Cartoon TV Series"
+        // Server 7
+        "7|English Movies/($year)/" to "English Movies",
+        "7|English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
+        "7|Foreign Language Movies/Japanese Language/" to "Japanese Movies",
+        "7|Foreign Language Movies/Korean Language/" to "Korean Movies",
+        "7|Foreign Language Movies/Bangla Dubbing Movies/" to "Bangla Dubbing Movies",
+        "7|Foreign Language Movies/Pakistani Movie/" to "Pakistani Movies",
+        "7|Kolkata Bangla Movies/(2022)/" to "Kolkata Bangla Movies",
+        "7|Foreign Language Movies/Chinese Language/" to "Chinese Movies",
+        // Server 9
+        "9|Anime %26 Cartoon TV Series/Anime-TV Series ♥%20 A%20 —%20 F/" to "Anime TV Series",
+        "9|KOREAN TV %26 WEB Series/" to "KOREAN TV & WEB Series",
+        "9|Documentary/" to "Documentary",
+        "9|Awards %26 TV Shows/%23 TV SPECIAL %26 SHOWS/" to "TV SPECIAL & SHOWS",
+        "9|Awards %26 TV Shows/%23 AWARDS/" to "Awards",
+        "9|WWE %26 AEW Wrestling/WWE Wrestling/%282025%29%20PPV/" to "WWE PPV",
+        "9|WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE ",
+        // Server 12
+        "12|TV-WEB-Series/TV Series ★%20 0%20 —%20 9/" to "TV Series ★ 0 — 9",
+        "12|TV-WEB-Series/TV Series ♥%20 A%20 —%20 L/" to "TV Series ♥ A — L",
+        "12|TV-WEB-Series/TV Series ♦%20 M%20 —%20 R/" to "TV Series ♦ M — R",
+        "12|TV-WEB-Series/TV Series ♦%20 S%20 —%20 Z/" to "TV Series ♦ S — Z",
+        // Server 14
+        "14|Animation Movies (1080p)/" to "Animation Movies",
+        "14|English Movies (1080p)/($year) 1080p/" to "English Movies",
+        "14|Hindi Movies/($year)/" to "Hindi Movies",
+        "14|SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies Hindi Dubbed",
+        "14|/KOREAN TV %26 WEB Series/" to "Korean TV & WEB Series",
+        "14|/Anime %26 Cartoon TV Series/" to "Anime & Cartoon TV Series"
     )
 
     // Number of items to load per page
@@ -146,7 +197,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
     ): TmdbSearchResult? = coroutineScope {
         val cleanName = cleanNameForSearch(name)
         val cacheKey = "$cleanName:$isMovie"
-        val providerCache = getProviderCache(this@BdixDhakaFlix14Provider.name)
+        val providerCache = getProviderCache(name)
         
         // First try to get from cache
         providerCache.getFromCache(providerCache.getSearchCache(), cacheKey, SEARCH_CACHE_DURATION)?.let { 
@@ -174,7 +225,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
         tmdbId: Int,
         seasonNumbers: List<Int>
     ): Map<Int, TmdbSeasonDetails?> = coroutineScope {
-        val providerCache = getProviderCache(this@BdixDhakaFlix14Provider.name)
+        val providerCache = getProviderCache(name)
         val cacheKey = "$tmdbId:${seasonNumbers.sorted().joinToString(",")}"
         
         // First check cache
@@ -202,7 +253,8 @@ open class BdixDhakaFlix14Provider : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse = coroutineScope {
-        val doc = app.get("$mainUrl/$serverName/${request.data}").document
+        val (server, path) = resolveServer(request.data)
+        val doc = app.get("${server.url}/${server.serverName}/$path").document
         
         // Ensure page is at least 1
         val safePage = maxOf(1, page)
@@ -224,7 +276,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
         val home = homeResponse.chunked(BATCH_SIZE).flatMap { chunk ->
             chunk.map { post ->
                 async {
-                    getPostResult(post, loadTmdbData = false, loadLocalPosters = true) // Enable local poster loading
+                    getPostResult(post, server.url, loadTmdbData = false, loadLocalPosters = true) // Enable local poster loading
                 }
             }.awaitAll()
         }
@@ -245,21 +297,23 @@ open class BdixDhakaFlix14Provider : MainAPI() {
             .trim()
     }    private suspend fun getPostResult(
         post: Element,
+        serverUrl: String,
         loadTmdbData: Boolean = false,
         loadLocalPosters: Boolean = false
     ): SearchResponse {
         val folderHtml = post.select("td.fb-n > a")
         val rawName = folderHtml.text()
         val name = cleanNameForSearch(rawName)  // Use the same cleaning logic as search
-        val url = mainUrl + folderHtml.attr("href")
+        val url = serverUrl + folderHtml.attr("href")
         
         // Determine content type based on URL
+        val serverKeywords = serverForUrl(url).tvSeriesKeyword
         val tvType = when {
             isAnime(url) -> {
                 // If it's anime, check if it's a series or movie
-                if (containsAnyLoop(url, tvSeriesKeyword)) TvType.Anime else TvType.AnimeMovie
+                if (containsAnyLoop(url, serverKeywords)) TvType.Anime else TvType.AnimeMovie
             }
-            containsAnyLoop(url, tvSeriesKeyword) -> TvType.TvSeries
+            containsAnyLoop(url, serverKeywords) -> TvType.TvSeries
             else -> TvType.Movie
         }
         
@@ -271,7 +325,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
         // Load local posters if requested (lightweight operation)
         val posterUrl = when {
             loadTmdbData -> findPosterUrl(url) // Full poster loading including TMDB fallback
-            loadLocalPosters -> DhakaFlixUtils.findPosterLight(url, mainUrl) // Local posters only
+            loadLocalPosters -> DhakaFlixUtils.findPosterLight(url, serverUrl) // Local posters only
             else -> null // No poster loading
         }
         
@@ -286,14 +340,16 @@ open class BdixDhakaFlix14Provider : MainAPI() {
             }
         }
     }    override suspend fun search(query: String): List<SearchResponse> {
-        // Use fast search with lightweight local poster loading
-        return DhakaFlixUtils.doSearch(
-            query = query,
-            mainUrl = mainUrl,
-            serverName = serverName,
-            api = this,
-            findPosterFunc = { url -> DhakaFlixUtils.findPosterLight(url, mainUrl) } // Enable local poster loading
-        )
+        // Search across all local servers with lightweight local poster loading
+        return servers.map { server ->
+            DhakaFlixUtils.doSearch(
+                query = query,
+                mainUrl = server.url,
+                serverName = server.serverName,
+                api = this,
+                findPosterFunc = { url -> DhakaFlixUtils.findPosterLight(url, serverForUrl(url).url) }
+            )
+        }.flatten()
     }
 
     // Use the common utility function for nameFromUrl
@@ -323,7 +379,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
         }
         
         // Priority 1: Look for local images in content folder
-        val localPoster = DhakaFlixUtils.findPoster(contentUrl, mainUrl)
+        val localPoster = DhakaFlixUtils.findPoster(contentUrl, serverForUrl(contentUrl).url)
         if (localPoster != null) {
             providerCache.addToCache(providerCache.getPosterCache(), contentUrl, localPoster)
             return localPoster
@@ -337,7 +393,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
         
         val result = if (name != null) {
             try {
-                val tmdbData = lazyLoadTmdbData(name, !containsAnyLoop(contentUrl, tvSeriesKeyword))
+                val tmdbData = lazyLoadTmdbData(name, !containsAnyLoop(contentUrl, serverForUrl(contentUrl).tvSeriesKeyword))
                 tmdbData?.posterPath?.let { TmdbHelper.getPosterUrl(it, isDetail = false) }
             } catch (e: Exception) {
                 null
@@ -360,6 +416,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse = coroutineScope {
+        val server = serverForUrl(url)
         val doc = app.get(url).document
         var name = ""
         var imageLink = ""
@@ -376,7 +433,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
         
         // Determine if this is a TV series, anime, or movie based on URL
         val isAnimeContent = isAnime(url)
-        val isTvSeries = containsAnyLoop(url, tvSeriesKeyword)
+        val isTvSeries = containsAnyLoop(url, server.tvSeriesKeyword)
         
           // Load TMDB data with details since this is a detail view
         val tmdbData = lazyLoadTmdbData(name, isMovie = !(isTvSeries || isAnimeContent), loadDetails = true)
@@ -414,7 +471,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
                 if (it.selectFirst("td.fb-i > img")?.attr("alt") == "folder") {
                     val folderName = it.select("td.fb-n > a").text()
                     val seasonInfo = parseSeasonInfo(folderName)
-                    val link = mainUrl + it.select("td.fb-n > a").attr("href")
+                    val link = server.url + it.select("td.fb-n > a").attr("href")
                     
                     val seasonNum: Int
                     val seasonName: String?
@@ -445,21 +502,21 @@ open class BdixDhakaFlix14Provider : MainAPI() {
                     
                     // Check for exact poster filenames first
                     if (posterPatterns.contains(filename)) {
-                        imageLink = mainUrl + href
+                        imageLink = server.url + href
                     }
                     // Then check for poster-like names
                     else if ((filename.contains("poster") || filename.contains("cover")) && 
                              imageExtensions.any { ext -> filename.endsWith(ext) }) {
-                        imageLink = mainUrl + href
+                        imageLink = server.url + href
                     }
                     // Finally any image file as fallback
                     else if (imageExtensions.any { ext -> filename.endsWith(ext) }) {
-                        imageLink = mainUrl + href
+                        imageLink = server.url + href
                     }
                 } else {
                     val folderHtml = it.select("td.fb-n > a")
                     val title = folderHtml.text()
-                    val link2 = mainUrl + folderHtml.attr("href")
+                    val link2 = server.url + folderHtml.attr("href")
                     if (!title.contains(Regex("\\.(jpg|jpeg|png)$", RegexOption.IGNORE_CASE))) {
                         val episodeNum = episodesData.size + 1
                         // For single season shows, we'll handle TMDB data after bulk loading
@@ -524,7 +581,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
                 if (folderHtml.isNotEmpty()) {
                     val fileName = folderHtml.text()
                     if (fileName.contains(Regex("\\.(mkv|mp4|avi)$", RegexOption.IGNORE_CASE))) {
-                        link = mainUrl + folderHtml.attr("href")
+link = server.url + folderHtml.attr("href")
                     }
                 }
             }
@@ -589,6 +646,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
         tmdbId: Int?,
         seasonName: String? = null
     ) = withContext(Dispatchers.IO) {
+        val server = serverForUrl(url)
         val doc = app.get(url).document
         
         // If we have TMDB ID, fetch season details first
@@ -600,7 +658,7 @@ open class BdixDhakaFlix14Provider : MainAPI() {
         val episodes = doc.select("tbody > tr:gt(1)").mapNotNull {
             val folderHtml = it.select("td.fb-n > a")
             val name = folderHtml.text()
-            val link = mainUrl + folderHtml.attr("href")
+            val link = server.url + folderHtml.attr("href")
             
             if (!name.contains(Regex("\\.(jpg|jpeg|png)$", RegexOption.IGNORE_CASE))) {
                 // Try to parse episode number from filename
@@ -675,13 +733,14 @@ open class BdixDhakaFlix14Provider : MainAPI() {
         seasonData: TmdbSeasonDetails?,
         seasonName: String? = null
     ) = withContext(Dispatchers.IO) {
+        val server = serverForUrl(url)
         val doc = app.get(url).document
         
         // Get all episode links and parse their episode numbers from filenames
         val episodes = doc.select("tbody > tr:gt(1)").mapNotNull {
             val folderHtml = it.select("td.fb-n > a")
             val name = folderHtml.text()
-            val link = mainUrl + folderHtml.attr("href")
+            val link = server.url + folderHtml.attr("href")
             
             if (!name.contains(Regex("\\.(jpg|jpeg|png)$", RegexOption.IGNORE_CASE))) {
                 // Try to parse episode number from filename
