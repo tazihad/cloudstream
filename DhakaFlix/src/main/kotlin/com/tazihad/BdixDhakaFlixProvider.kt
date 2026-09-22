@@ -59,6 +59,14 @@ open class BdixDhakaFlixProvider : MainAPI() {
 
     private val animeKeyword = listOf("Anime%20%26%20Cartoon%20TV%20Series")
 
+    private val combinedTvSeriesKey = "__tv_series_all__"
+    private val combinedTvSeriesPaths = listOf(
+        "TV-WEB-Series/TV Series ★%20 0%20 —%20 9/",
+        "TV-WEB-Series/TV Series ♥%20 A%20 —%20 L/",
+        "TV-WEB-Series/TV Series ♦%20 M%20 —%20 R/",
+        "TV-WEB-Series/TV Series ♦%20 S%20 —%20 Z/"
+    )
+
     private fun serverById(id: String): LocalServer =
         servers.firstOrNull { it.id == id } ?: servers.last()
 
@@ -155,32 +163,32 @@ open class BdixDhakaFlixProvider : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        // Server 7
+        // English 720p
         "7|English Movies/($year)/" to "English Movies (720p)",
+        // English 1080p
+        "14|English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
+        // TV Series (all letter ranges combined)
+        "12|__tv_series_all__" to "TV Series",
+        // Anime
+        "9|Anime %26 Cartoon TV Series/Anime-TV Series ♥%20 A%20 —%20 F/" to "Anime TV Series",
+        "14|Animation Movies (1080p)/" to "Anime Movies",
+        // Movies
+        "14|Hindi Movies/($year)/" to "Hindi Movies",
+        "14|SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies",
+        "14|/KOREAN TV %26 WEB Series/" to "Korean TV & WEB Series",
+        // Server 7 movies
         "7|Foreign Language Movies/Japanese Language/" to "Japanese Movies",
         "7|Foreign Language Movies/Korean Language/" to "Korean Movies",
         "7|Foreign Language Movies/Bangla Dubbing Movies/" to "Bangla Dubbing Movies",
         "7|Foreign Language Movies/Pakistani Movie/" to "Pakistani Movies",
         "7|Kolkata Bangla Movies/(2022)/" to "Kolkata Bangla Movies",
         "7|Foreign Language Movies/Chinese Language/" to "Chinese Movies",
-        // Server 9
-        "9|Anime %26 Cartoon TV Series/Anime-TV Series ♥%20 A%20 —%20 F/" to "Anime TV Series",
+        // Server 9 extras
         "9|Documentary/" to "Documentary",
         "9|Awards %26 TV Shows/%23 TV SPECIAL %26 SHOWS/" to "TV SPECIAL & SHOWS",
         "9|Awards %26 TV Shows/%23 AWARDS/" to "Awards",
         "9|WWE %26 AEW Wrestling/WWE Wrestling/%282025%29%20PPV/" to "WWE PPV",
-        "9|WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE ",
-        // Server 12
-        "12|TV-WEB-Series/TV Series ★%20 0%20 —%20 9/" to "TV Series ★ 0 — 9",
-        "12|TV-WEB-Series/TV Series ♥%20 A%20 —%20 L/" to "TV Series ♥ A — L",
-        "12|TV-WEB-Series/TV Series ♦%20 M%20 —%20 R/" to "TV Series ♦ M — R",
-        "12|TV-WEB-Series/TV Series ♦%20 S%20 —%20 Z/" to "TV Series ♦ S — Z",
-        // Server 14
-        "14|Animation Movies (1080p)/" to "Animation Movies",
-        "14|English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
-        "14|Hindi Movies/($year)/" to "Hindi Movies",
-        "14|SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies Hindi Dubbed",
-        "14|/KOREAN TV %26 WEB Series/" to "Korean TV & WEB Series"
+        "9|WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE "
     )
 
     // Number of items to load per page
@@ -251,15 +259,21 @@ open class BdixDhakaFlixProvider : MainAPI() {
         request: MainPageRequest
     ): HomePageResponse = coroutineScope {
         val (server, path) = resolveServer(request.data)
-        val doc = app.get("${server.url}/${server.serverName}/$path").document
+        
+        // Combined sections merge multiple sub-folders into one listing
+        val rows = if (path == combinedTvSeriesKey) {
+            combinedTvSeriesPaths.flatMap { subPath ->
+                app.get("${server.url}/${server.serverName}/$subPath").document.select("tbody > tr").drop(2)
+            }
+        } else {
+            app.get("${server.url}/${server.serverName}/$path").document.select("tbody > tr").drop(2)
+        }
+        val totalItems = rows.size
         
         // Ensure page is at least 1
         val safePage = maxOf(1, page)
-        val startIndex = ((safePage - 1) * itemsPerPage + 2).coerceAtLeast(2)
+        val startIndex = ((safePage - 1) * itemsPerPage).coerceAtLeast(0)
         val endIndex = (startIndex + itemsPerPage).coerceAtLeast(startIndex)
-        
-        val rows = doc.select("tbody > tr")
-        val totalItems = rows.size
         
         // Ensure we don't exceed the available items
         val safeStartIndex = startIndex.coerceAtMost(totalItems)
