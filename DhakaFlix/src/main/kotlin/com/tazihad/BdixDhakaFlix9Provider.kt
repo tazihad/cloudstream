@@ -15,10 +15,12 @@ class BdixDhakaFlix9Provider : BdixDhakaFlix14Provider() {
         TvType.TvSeries
     )
     override val mainPage = mainPageOf(
-        "Anime %26 Cartoon TV Series/" to "Anime",
+        "Anime %26 Cartoon TV Series/Anime-TV Series ♥%20 A%20 —%20 F/" to "Anime TV Series",
+        "KOREAN TV %26 WEB Series/" to "KOREAN TV & WEB Series",
+        "Documentary/" to "Documentary",
+        "Awards %26 TV Shows/%23 TV SPECIAL %26 SHOWS/" to "TV SPECIAL & SHOWS",
         "Awards %26 TV Shows/%23 AWARDS/" to "Awards",
-        "Documentary/" to "Documentaries",
-        "Tutorials/" to "Tutorials",
-        "WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE",
+        "WWE %26 AEW Wrestling/WWE Wrestling/%282025%29%20PPV/" to "WWE PPV",
+        "WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE ",
     )
 }

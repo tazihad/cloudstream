@@ -127,13 +127,12 @@ open class BdixDhakaFlix14Provider : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "Animation Movies/" to "Animation Movies",
-        "Animation Movies (1080p)/" to "Animation Movies 1080p",
-        "English Movies (1080p)/($year) 1080p/" to "English Movies 1080p",
+        "Animation Movies (1080p)/" to "Animation Movies",
+        "English Movies (1080p)/($year) 1080p/" to "English Movies",
         "Hindi Movies/($year)/" to "Hindi Movies",
-        "IMDB TOP 250 Movies/" to "IMDB Top 250",
-        "/KOREAN TV %26 WEB Series/" to "Korean TV",
-        "/SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Indian"
+        "SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies Hindi Dubbed",
+        "/KOREAN TV %26 WEB Series/" to "Korean TV & WEB Series",
+        "/Anime %26 Cartoon TV Series/" to "Anime & Cartoon TV Series"
     )
 
     // Number of items to load per page

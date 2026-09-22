@@ -10,8 +10,13 @@ class BdixDhakaFlix7Provider : BdixDhakaFlix14Provider()  {
     override val serverName: String = "DHAKA-FLIX-7"
     override val supportedTypes = setOf(TvType.Movie)
     override val mainPage= mainPageOf(
-        "English Movies/($year)/" to "English Movies 720p",
-        "Foreign Language Movies/" to "Foreign Language Movies",
-        "Kolkata Bangla Movies/(2022)/" to "Indian Bangla Movie",
+        "English Movies/($year)/" to "English Movies",
+        "English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
+        "Foreign Language Movies/Japanese Language/" to "Japanese Movies",
+        "Foreign Language Movies/Korean Language/" to "Korean Movies",
+        "Foreign Language Movies/Bangla Dubbing Movies/" to "Bangla Dubbing Movies",
+        "Foreign Language Movies/Pakistani Movie/" to "Pakistani Movies",
+        "Kolkata Bangla Movies/(2022)/" to "Kolkata Bangla Movies",
+        "Foreign Language Movies/Chinese Language/" to "Chinese Movies"
     )
 }
