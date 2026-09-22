@@ -156,7 +156,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
         // Server 7
-        "7|English Movies/($year)/" to "English Movies",
+        "7|English Movies/($year)/" to "English Movies (720p)",
         "7|English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
         "7|Foreign Language Movies/Japanese Language/" to "Japanese Movies",
         "7|Foreign Language Movies/Korean Language/" to "Korean Movies",
@@ -179,11 +179,9 @@ open class BdixDhakaFlixProvider : MainAPI() {
         "12|TV-WEB-Series/TV Series ♦%20 S%20 —%20 Z/" to "TV Series ♦ S — Z",
         // Server 14
         "14|Animation Movies (1080p)/" to "Animation Movies",
-        "14|English Movies (1080p)/($year) 1080p/" to "English Movies",
+        "14|English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
         "14|Hindi Movies/($year)/" to "Hindi Movies",
-        "14|SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies Hindi Dubbed",
-        "14|/KOREAN TV %26 WEB Series/" to "Korean TV & WEB Series",
-        "14|/Anime %26 Cartoon TV Series/" to "Anime & Cartoon TV Series"
+        "14|SOUTH INDIAN MOVIES/Hindi Dubbed/($year)/" to "South Movies Hindi Dubbed"
     )
 
     // Number of items to load per page
