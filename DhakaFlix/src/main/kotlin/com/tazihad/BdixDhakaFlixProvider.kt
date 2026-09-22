@@ -188,8 +188,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
         "9|Documentary/" to "Documentary",
         "9|Awards %26 TV Shows/%23 TV SPECIAL %26 SHOWS/" to "TV SPECIAL & SHOWS",
         "9|Awards %26 TV Shows/%23 AWARDS/" to "Awards",
-        "9|WWE %26 AEW Wrestling/WWE Wrestling/%282025%29%20PPV/" to "WWE PPV",
-        "9|WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE "
+        "9|WWE %26 AEW Wrestling/" to "WWE & AEW Wrestling"
     )
 
     // Number of items to load per page
@@ -298,6 +297,18 @@ open class BdixDhakaFlixProvider : MainAPI() {
         newHomePageResponse(request.name, home, hasNextPage)
     }
 
+    private fun cleanFolderName(name: String): String {
+        return name.replace(Regex("\\d{3,4}p"), "") // Remove quality tags
+            .replace(Regex("\\bHDTV\\b", RegexOption.IGNORE_CASE), "") // Remove HDTV tag
+            .replace(Regex("[._]"), " ") // Replace separators with spaces
+            .replace(Regex("\\s+"), " ") // Replace multiple spaces with single space
+            .trim()
+    }
+
+    private fun isWrestling(url: String): Boolean {
+        return url.contains("WWE") || url.contains("AEW")
+    }
+
     private fun cleanNameForSearch(name: String): String {
         // Remove quality tags, file extensions, and brackets content
         return name.replace(Regex("\\d{3,4}p.*"), "") // Remove quality tags
@@ -315,8 +326,8 @@ open class BdixDhakaFlixProvider : MainAPI() {
     ): SearchResponse {
         val folderHtml = post.select("td.fb-n > a")
         val rawName = folderHtml.text()
-        val name = cleanNameForSearch(rawName)  // Use the same cleaning logic as search
         val url = serverUrl + folderHtml.attr("href")
+        val name = if (isWrestling(url)) cleanFolderName(rawName) else cleanNameForSearch(rawName)  // Keep full folder names for wrestling
         
         // Determine content type based on URL
         val serverKeywords = serverForUrl(url).tvSeriesKeyword
