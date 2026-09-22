@@ -147,7 +147,7 @@ open class RoyalFlixProvider : MainAPI() {
     private val maxCrawlDepth = 6
 
     private val videoExt = Regex("\\.(mp4|mkv|avi|webm|mov|m4v)$", RegexOption.IGNORE_CASE)
-    private val episodeRegex = Regex("[Ss]\\d{1,2}[Ee](\\d{1,3})")
+    private val episodeRegex = Regex("[Ss]\\d{1,2}[Ee][Pp]?(\\d{1,3})")
 
     private data class RowEntry(val name: String, val url: String, val isFolder: Boolean)
     private data class FlatEntry(val name: String, val url: String)
@@ -365,7 +365,10 @@ open class RoyalFlixProvider : MainAPI() {
         val isMovie = tvType == TvType.Movie || tvType == TvType.AnimeMovie
 
         // TMDb poster only — local folder covers are never used.
-        val posterUrl = lazyLoadTmdbData(name, isMovie, loadDetails = true)
+        // Use loadDetails=false (fire-and-forget background call) so the main
+        // page doesn't block waiting for TMDB. Posters will populate on the
+        // next page load once the cache is warm.
+        val posterUrl = lazyLoadTmdbData(name, isMovie, loadDetails = false)
             ?.posterPath
             ?.let { RoyalFlixTmdbHelper.getPosterUrl(it) }
 
