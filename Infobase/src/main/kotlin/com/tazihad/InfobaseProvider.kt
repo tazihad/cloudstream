@@ -230,7 +230,7 @@ open class InfobaseProvider : MainAPI() {
         val def = sectionDefs[key] ?: return@coroutineScope emptyList()
         val isSeries = def.type == TvType.TvSeries || def.type == TvType.Anime
 
-        // Fetch ALL roots in parallel — sequential was the bug (4 roots × 8s = 32s timeout)
+        // Fetch ALL roots in parallel
         val items = def.roots.map { root ->
             async {
                 runCatching {
@@ -238,17 +238,17 @@ open class InfobaseProvider : MainAPI() {
                     val rows = listFolder(url)
 
                     if (isSeries) {
+                        // Series section: each subfolder = one show
                         rows.filter { it.isFolder }.map { FlatEntry(it.name, it.url) }
                     } else {
+                        // Movie section: collect direct .mp4 files first
                         val directMovies = rows
                             .filter { !it.isFolder && videoExt.containsMatchIn(it.name) }
                             .map { FlatEntry(cleanFileTitle(it.name), it.url) }
 
-                        // Expand year-bucket folders in parallel too
-                        val yearFolders = rows.filter { it.isFolder && yearFolderRegex.matches(it.name) }
-                        val namedFolders = rows.filter { it.isFolder && !yearFolderRegex.matches(it.name) }
-
-                        val fromYearFolders = yearFolders.map { folder ->
+                        // Expand ALL subfolders (year buckets, named collections, etc.)
+                        // to get the actual movie files inside — in parallel
+                        val fromSubfolders = rows.filter { it.isFolder }.map { folder ->
                             async {
                                 runCatching {
                                     listFolder(folder.url)
@@ -258,10 +258,7 @@ open class InfobaseProvider : MainAPI() {
                             }
                         }.awaitAll().flatten()
 
-                        // Named non-year folders treated as a single item each
-                        val fromNamedFolders = namedFolders.map { FlatEntry(it.name, it.url) }
-
-                        directMovies + fromYearFolders + fromNamedFolders
+                        directMovies + fromSubfolders
                     }
                 }.getOrElse { emptyList<FlatEntry>() }
             }
@@ -269,6 +266,7 @@ open class InfobaseProvider : MainAPI() {
 
         items.distinctBy { it.url }
     }
+
 
     // Section-level isolation: a section throwing returns empty instead of crashing
     private suspend fun getFlatSection(key: String): List<FlatEntry> {
