@@ -23,6 +23,8 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.jsoup.nodes.Element
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -128,6 +130,8 @@ open class CityPlexProvider : MainAPI() {
     private val maxGroupDepth = 4
     private val batchSize = 6
 
+    private val flatListMutex = Mutex()
+
     // Grouping folder detection: year folders (e.g. "(2019)", "(1995) & Before",
     // "2000 & Before", "(2024) 1080p") plus known language / structural folders.
     private val yearFolderRegex = Regex("^\\(?(19|20)\\d{2}\\)?( & Before)?( 1080p| 720p| 480p| 2160p)?$")
@@ -198,7 +202,7 @@ open class CityPlexProvider : MainAPI() {
         private val bulkSeasonCache = Collections.synchronizedMap(mutableMapOf<String, Pair<Map<Int, CityPlexTmdbSeasonDetails?>, Long>>())
         private val flatCache = Collections.synchronizedMap(mutableMapOf<String, List<FlatEntry>>())
 
-        private const val TMDB_CACHE_DURATION = 15 * 60 * 1000L
+        private val TMDB_CACHE_DURATION = 15 * 60 * 1000L
 
         fun <T> getFromCache(
             cache: MutableMap<String, Pair<T?, Long>>,
@@ -326,9 +330,9 @@ open class CityPlexProvider : MainAPI() {
         val providerCache = getProviderCache()
         providerCache.getFlat(key)?.let { return it }
 
-        synchronized(providerCache) {
+        return flatListMutex.withLock {
             providerCache.getFlat(key)?.let { return it }
-            return buildAndCache(key, request)
+            buildAndCache(key, request)
         }
     }
 
@@ -481,33 +485,35 @@ open class CityPlexProvider : MainAPI() {
             if (score >= 0.2) entry to score else null
         }.sortedByDescending { it.second }.take(40)
 
-        return scored.chunked(batchSize).flatMap { batch ->
-            batch.map { (entry, _) ->
-                async {
-                    val rawName = entry.name
-                    val name = if (isWrestling(entry.url)) cleanFolderName(rawName) else cleanNameForSearch(rawName)
-                    val isAnimeContent = entry.url.contains(animeKeyword)
-                    val tvType = when {
-                        isAnimeContent -> TvType.Anime
-                        containsAnyLoop(entry.url, seriesKeyword) -> TvType.TvSeries
-                        else -> TvType.Movie
-                    }
-                    val posterUrl = try {
-                        CityPlexUtils.findPosterLight(entry.url, entry.server.url)
-                    } catch (e: Exception) {
-                        null
-                    }
-                    newAnimeSearchResponse(name, entry.url, tvType) {
-                        addDubStatus(
-                            dubExist = CityPlexUtils.hasMultiAudio(rawName),
-                            subExist = false
-                        )
-                        if (posterUrl?.isNotEmpty() == true) {
-                            this.posterUrl = posterUrl
+        return coroutineScope {
+            scored.chunked(batchSize).flatMap { batch ->
+                batch.map { (entry, _) ->
+                    async {
+                        val rawName = entry.name
+                        val name = if (isWrestling(entry.url)) cleanFolderName(rawName) else cleanNameForSearch(rawName)
+                        val isAnimeContent = entry.url.contains(animeKeyword)
+                        val tvType = when {
+                            isAnimeContent -> TvType.Anime
+                            containsAnyLoop(entry.url, seriesKeyword) -> TvType.TvSeries
+                            else -> TvType.Movie
+                        }
+                        val posterUrl = try {
+                            CityPlexUtils.findPosterLight(entry.url, entry.server.url)
+                        } catch (e: Exception) {
+                            null
+                        }
+                        newAnimeSearchResponse(name, entry.url, tvType) {
+                            addDubStatus(
+                                dubExist = CityPlexUtils.hasMultiAudio(rawName),
+                                subExist = false
+                            )
+                            if (posterUrl?.isNotEmpty() == true) {
+                                this.posterUrl = posterUrl
+                            }
                         }
                     }
-                }
-            }.awaitAll()
+                }.awaitAll()
+            }
         }
     }
 
