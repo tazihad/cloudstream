@@ -58,6 +58,39 @@ open class BdixDhakaFlixProvider : MainAPI() {
     // after this budget and returns whatever it has (possibly empty).
     private val sectionFetchTimeoutMs = 15_000L
 
+    // Server health tracking. A server that is down/unreachable (e.g. a powered
+    // off NAS) must not waste per-section timeouts or fail the whole home page:
+    // its section is skipped entirely (getMainPage returns null). The server is
+    // NOT removed from the configuration, and it is re-probed after the TTL
+    // below, so it automatically comes back online once it responds again.
+    private val serverHealthTtlMs = 5 * 60 * 1000L
+    private val serverHealthProbeTimeoutMs = 3_000L
+    private val serverHealthCache = mutableMapOf<String, Pair<Boolean, Long>>()
+
+    @Synchronized
+    private fun cachedServerHealth(serverId: String): Boolean? {
+        return serverHealthCache[serverId]?.let { (ok, checkedAt) ->
+            if (System.currentTimeMillis() - checkedAt < serverHealthTtlMs) ok else null
+        }
+    }
+
+    @Synchronized
+    private fun rememberServerHealth(serverId: String, ok: Boolean) {
+        serverHealthCache[serverId] = ok to System.currentTimeMillis()
+    }
+
+    // Probes the server by fetching its root folder. ANY completed response
+    // (including 4xx/5xx) means the server answers, only a timeout/exception
+    // marks it as unavailable.
+    private suspend fun isServerAvailable(server: LocalServer): Boolean {
+        cachedServerHealth(server.id)?.let { return it }
+        val available = withTimeoutOrNull(serverHealthProbeTimeoutMs) {
+            runCatching { app.get("${server.url}/${server.serverName}/") }.isSuccess
+        } ?: false
+        rememberServerHealth(server.id, available)
+        return available
+    }
+
     protected data class LocalServer(
         val id: String,
         val url: String,
@@ -280,9 +313,17 @@ open class BdixDhakaFlixProvider : MainAPI() {
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
-    ): HomePageResponse = coroutineScope {
+    ): HomePageResponse? = coroutineScope {
         val (server, path) = resolveServer(request.data)
         val isWrestlingSection = isWrestling(path)
+
+        // If this section's server is currently unreachable, skip the whole
+        // section (return null) instead of hammering it with timeouts or showing
+        // an empty row. The server stays configured and is re-probed on a timer,
+        // so it reappears automatically once it starts answering again.
+        if (!isServerAvailable(server)) {
+            return@coroutineScope null
+        }
 
         // Year-based sections start at the current year and automatically fall
         // back to previous years (year - 1, year - 2, ...) when the current
@@ -499,15 +540,20 @@ open class BdixDhakaFlixProvider : MainAPI() {
             }
         }
     }    override suspend fun search(query: String): List<SearchResponse> {
-        // Search across all local servers with lightweight local poster loading
-        return servers.map { server ->
-            DhakaFlixUtils.doSearch(
-                query = query,
-                mainUrl = server.url,
-                serverName = server.serverName,
-                api = this,
-                findPosterFunc = { url -> DhakaFlixUtils.findPosterLight(url, serverForUrl(url).url) }
-            )
+        // Search across all local servers with lightweight local poster loading.
+        // Unreachable servers are skipped entirely instead of being searched.
+        return servers.mapNotNull { server ->
+            if (!isServerAvailable(server)) {
+                null
+            } else {
+                DhakaFlixUtils.doSearch(
+                    query = query,
+                    mainUrl = server.url,
+                    serverName = server.serverName,
+                    api = this,
+                    findPosterFunc = { url -> DhakaFlixUtils.findPosterLight(url, serverForUrl(url).url) }
+                )
+            }
         }.flatten()
     }
 

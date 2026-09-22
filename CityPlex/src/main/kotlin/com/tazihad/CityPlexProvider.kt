@@ -135,6 +135,38 @@ open class CityPlexProvider : MainAPI() {
     // the whole home page (CloudStream wraps all sections in one big timeout).
     private val sectionFetchTimeoutMs = 15_000L
 
+    // Server health tracking (same approach as DhakaFlix). A server that is
+    // down/unreachable is skipped: folder requests return empty immediately and
+    // the whole section is hidden if it has nothing to show. The server is NOT
+    // removed from the configuration and is re-probed after the TTL, so it comes
+    // back automatically once it responds again.
+    private val serverHealthTtlMs = 5 * 60 * 1000L
+    private val serverHealthProbeTimeoutMs = 3_000L
+    private val serverHealthCache = mutableMapOf<String, Pair<Boolean, Long>>()
+
+    @Synchronized
+    private fun cachedServerHealth(serverId: String): Boolean? {
+        return serverHealthCache[serverId]?.let { (ok, checkedAt) ->
+            if (System.currentTimeMillis() - checkedAt < serverHealthTtlMs) ok else null
+        }
+    }
+
+    @Synchronized
+    private fun rememberServerHealth(serverId: String, ok: Boolean) {
+        serverHealthCache[serverId] = ok to System.currentTimeMillis()
+    }
+
+    // Probes the server root. Any completed response (including 4xx/5xx) means
+    // the server answers; only a timeout/exception marks it unavailable.
+    private suspend fun isServerAvailable(server: LocalServer): Boolean {
+        cachedServerHealth(server.id)?.let { return it }
+        val available = withTimeoutOrNull(serverHealthProbeTimeoutMs) {
+            runCatching { app.get("${server.url}/") }.isSuccess
+        } ?: false
+        rememberServerHealth(server.id, available)
+        return available
+    }
+
     private val flatListMutex = Mutex()
 
     // Grouping folder detection: year folders (e.g. "(2019)", "(1995) & Before",
@@ -293,6 +325,9 @@ open class CityPlexProvider : MainAPI() {
     // -------------------------------------------------------------------------
 
     private suspend fun listFolder(server: LocalServer, path: String): List<DirEntry> {
+        // Skip unreachable servers instantly; live parts of combined sections
+        // still contribute their content ("load the rest from the shared").
+        if (!isServerAvailable(server)) return emptyList()
         return withTimeoutOrNull(sectionFetchTimeoutMs) {
             app.get("${server.url}/$path").document.select("tbody > tr").drop(2).mapNotNull { row ->
                 val a = row.selectFirst("td.fb-n > a") ?: return@mapNotNull null
@@ -319,6 +354,7 @@ open class CityPlexProvider : MainAPI() {
     }
 
     private suspend fun listFolderFromUrl(entry: DirEntry): List<DirEntry> {
+        if (!isServerAvailable(entry.server)) return emptyList()
         return withTimeoutOrNull(sectionFetchTimeoutMs) {
             app.get(entry.url).document.select("tbody > tr").drop(2).mapNotNull { row ->
                 val a = row.selectFirst("td.fb-n > a") ?: return@mapNotNull null
@@ -370,7 +406,12 @@ open class CityPlexProvider : MainAPI() {
     private suspend fun buildAndCache(key: String, request: MainPageRequest): List<FlatEntry> {
         return try {
             val list = buildFlatList(request)
-            getProviderCache().putFlat(key, list)
+            // Only cache non-empty lists: a section that came up empty because
+            // its server was down must be rebuilt (and show content again) once
+            // that server recovers, without needing a reinstall.
+            if (list.isNotEmpty()) {
+                getProviderCache().putFlat(key, list)
+            }
             list
         } catch (e: Exception) {
             emptyList()
@@ -437,9 +478,15 @@ open class CityPlexProvider : MainAPI() {
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
-    ): HomePageResponse = coroutineScope {
+    ): HomePageResponse? = coroutineScope {
         val flatList = getOrBuildFlatList(request)
         val totalItems = flatList.size
+
+        // Nothing to show (all servers of this section are unreachable or it has
+        // no content): skip the section entirely instead of rendering an empty row.
+        if (flatList.isEmpty()) {
+            return@coroutineScope null
+        }
 
         val safePage = maxOf(1, page)
         val startIndex = ((safePage - 1) * itemsPerPage).coerceAtMost(totalItems)
