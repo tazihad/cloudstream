@@ -157,7 +157,6 @@ open class BdixDhakaFlixProvider : MainAPI() {
     override val mainPage = mainPageOf(
         // Server 7
         "7|English Movies/($year)/" to "English Movies (720p)",
-        "7|English Movies (1080p)/($year) 1080p/" to "English Movies (1080p)",
         "7|Foreign Language Movies/Japanese Language/" to "Japanese Movies",
         "7|Foreign Language Movies/Korean Language/" to "Korean Movies",
         "7|Foreign Language Movies/Bangla Dubbing Movies/" to "Bangla Dubbing Movies",
