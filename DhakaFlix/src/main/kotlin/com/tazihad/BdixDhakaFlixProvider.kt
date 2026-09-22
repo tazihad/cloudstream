@@ -188,7 +188,8 @@ open class BdixDhakaFlixProvider : MainAPI() {
         "9|Documentary/" to "Documentary",
         "9|Awards %26 TV Shows/%23 TV SPECIAL %26 SHOWS/" to "TV SPECIAL & SHOWS",
         "9|Awards %26 TV Shows/%23 AWARDS/" to "Awards",
-        "9|WWE %26 AEW Wrestling/" to "WWE & AEW Wrestling"
+        "9|WWE %26 AEW Wrestling/WWE Wrestling/%28$year%29%20PPV/" to "WWE PPV",
+        "9|WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE"
     )
 
     // Number of items to load per page
