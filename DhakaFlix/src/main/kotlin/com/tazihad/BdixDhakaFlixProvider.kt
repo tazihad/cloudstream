@@ -189,7 +189,8 @@ open class BdixDhakaFlixProvider : MainAPI() {
         "9|Awards %26 TV Shows/%23 TV SPECIAL %26 SHOWS/" to "TV SPECIAL & SHOWS",
         "9|Awards %26 TV Shows/%23 AWARDS/" to "Awards",
         "9|WWE %26 AEW Wrestling/WWE Wrestling/%28$year%29%20PPV/" to "WWE PPV",
-        "9|WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE"
+        "9|WWE %26 AEW Wrestling/WWE Wrestling/" to "WWE",
+        "9|WWE %26 AEW Wrestling/AEW Wrestling/" to "AEW"
     )
 
     // Number of items to load per page
@@ -260,6 +261,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
         request: MainPageRequest
     ): HomePageResponse = coroutineScope {
         val (server, path) = resolveServer(request.data)
+        val isWrestlingSection = isWrestling(path)
         
         // Combined sections merge multiple sub-folders into one listing
         val rows = if (path == combinedTvSeriesKey) {
@@ -284,11 +286,11 @@ open class BdixDhakaFlixProvider : MainAPI() {
             rows.filterIndexed { index, _ -> index in safeStartIndex until safeEndIndex }
         } else {
             emptyList()
-        }        // Process items in smaller batches - enable local poster loading for better UX
+        }        // Process items in smaller batches - enable TMDB posters for wrestling sections, local posters otherwise
         val home = homeResponse.chunked(BATCH_SIZE).flatMap { chunk ->
             chunk.map { post ->
                 async {
-                    getPostResult(post, server.url, loadTmdbData = false, loadLocalPosters = true) // Enable local poster loading
+                    getPostResult(post, server.url, loadTmdbData = isWrestlingSection, loadLocalPosters = !isWrestlingSection)
                 }
             }.awaitAll()
         }
