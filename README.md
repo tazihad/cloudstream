@@ -31,6 +31,7 @@ The DhakaFlix extension provides access to local BDIX media servers with TMDb me
 |---------------|---------------------|
 | (BDIX) DhakaFlix 7  | `172.16.50.7`  |
 | (BDIX) DhakaFlix 9  | `172.16.50.9`  |
+| (BDIX) DhakaFlix 10 | `172.16.50.10` |
 | (BDIX) DhakaFlix 12 | `172.16.50.12` |
 | (BDIX) DhakaFlix 14 | `172.16.50.14` |
 
