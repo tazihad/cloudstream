@@ -103,13 +103,13 @@ open class BdixDhakaFlixProvider : MainAPI() {
 
     protected open val servers = listOf(
         LocalServer("7", "http://172.16.50.7", "DHAKA-FLIX-7", emptyList()),
-        LocalServer("9", "http://172.16.50.9", "DHAKA-FLIX-9", listOf("Awards", "WWE", "KOREAN", "Documentary", "Anime")),
-        LocalServer("10", "http://172.16.50.10", "DHAKA-FLIX-10", emptyList()),
+        LocalServer("9", "http://172.16.50.9", "DHAKA-FLIX-9", listOf("Awards", "WWE", "KOREAN", "Documentary")),
+        LocalServer("10", "http://172.16.50.10", "DHAKA-FLIX-10", listOf("Anime")),
         LocalServer("12", "http://172.16.50.12", "DHAKA-FLIX-12", listOf("TV-WEB-Series")),
         LocalServer("14", "http://172.16.50.14", "DHAKA-FLIX-14", listOf("KOREAN%20TV%20%26%20WEB%20Series"))
     )
 
-    private val animeKeyword = listOf("Anime%20%26%20Cartoon%20TV%20Series")
+    private val animeKeyword = listOf("Anime%20%26%20Cartoon%20TV%20Series", "Anime %26 Cartoon TV Series", "Anime")
 
     private val combinedTvSeriesKey = "__tv_series_all__"
     private val combinedTvSeriesPaths = listOf(
@@ -226,7 +226,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
         // TV Series (all letter ranges combined)
         "12|__tv_series_all__" to "TV Series",
         // Anime
-        "9|Anime %26 Cartoon TV Series/Anime-TV Series ♥%20 A%20 —%20 F/" to "Anime TV Series",
+        "10|Anime %26 Cartoon TV Series/Anime-TV Series ♥%20 A%20 —%20 F/" to "Anime TV Series",
         "14|Animation Movies (1080p)/" to "Anime Movies",
         // Movies
         "14|Hindi Movies/($yearPlaceholder)/" to "Hindi Movies",
