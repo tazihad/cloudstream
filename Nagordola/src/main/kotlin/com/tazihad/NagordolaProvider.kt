@@ -21,7 +21,6 @@ import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
-import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
@@ -216,20 +215,17 @@ open class NagordolaProvider : MainAPI() {
                 val clean = cleanPath(rawPath)
                 val fullCleanPath = if (clean.isEmpty()) "/p" else if (clean.startsWith("p")) "/$clean" else "/p/$clean"
 
-                val jsonPayload = toJson(
-                    AListRequest(
-                        path = fullCleanPath,
-                        password = "",
-                        page = page,
-                        per_page = perPage
-                    )
+                val reqObj = AListRequest(
+                    path = fullCleanPath,
+                    password = "",
+                    page = page,
+                    per_page = perPage
                 )
 
                 val response = app.post(
                     url = "$mainUrl/api/fs/list",
-                    data = jsonPayload,
+                    json = reqObj,
                     headers = mapOf(
-                        "Content-Type" to "application/json",
                         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                     )
                 ).text
@@ -252,18 +248,15 @@ open class NagordolaProvider : MainAPI() {
                 val clean = cleanPath(rawPath)
                 val fullCleanPath = if (clean.isEmpty()) "/p" else if (clean.startsWith("p")) "/$clean" else "/p/$clean"
 
-                val jsonPayload = toJson(
-                    AListGetRequest(
-                        path = fullCleanPath,
-                        password = ""
-                    )
+                val reqObj = AListGetRequest(
+                    path = fullCleanPath,
+                    password = ""
                 )
 
                 val response = app.post(
                     url = "$mainUrl/api/fs/get",
-                    data = jsonPayload,
+                    json = reqObj,
                     headers = mapOf(
-                        "Content-Type" to "application/json",
                         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                     )
                 ).text
