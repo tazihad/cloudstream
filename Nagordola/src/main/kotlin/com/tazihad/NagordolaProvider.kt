@@ -1,6 +1,5 @@
 package com.tazihad
 
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -20,7 +19,6 @@ import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
-import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
@@ -28,9 +26,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.net.URLDecoder
 import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.util.Collections
 
 open class NagordolaProvider : MainAPI() {
@@ -60,7 +60,8 @@ open class NagordolaProvider : MainAPI() {
         "p/tv-series/tvshows-hindi" to Pair("Hindi TV Series", TvType.TvSeries),
         "p/tv-series/tvshows-bangla" to Pair("Bangla TV Series", TvType.TvSeries),
         "p/tv-series" to Pair("All TV Series", TvType.TvSeries),
-        "p/movies" to Pair("All Movies", TvType.Movie)
+        "p/movies" to Pair("All Movies", TvType.Movie),
+        "p" to Pair("Nagordola CDN Home", TvType.Movie)
     )
 
     override val mainPage = mainPageOf(
@@ -71,61 +72,24 @@ open class NagordolaProvider : MainAPI() {
     private val batchSize = 6
     private val sectionFetchTimeoutMs = 15_000L
 
-    private val videoExtRegex = Regex("\\.(mp4|mkv|avi|webm|mov|m4v|flv|ts)$", RegexOption.IGNORE_CASE)
+    private val videoExtRegex = Regex("\\.(mp4|mkv|avi|webm|mov|m4v|flv|ts|m2ts)$", RegexOption.IGNORE_CASE)
     private val subtitleExtRegex = Regex("\\.(srt|vtt|ass|ssa)$", RegexOption.IGNORE_CASE)
     private val episodeRegex = Regex("(?i)[Ss](\\d{1,2})[Ee][Pp]?(\\d{1,3})|Episode\\s*(\\d{1,3})|Ep\\s*(\\d{1,3})")
     private val yearFolderRegex = Regex("^\\(?(19|20)\\d{2}\\)?$")
 
-    // AList API Data Models
-    data class AListRequest(
-        @JsonProperty("path") val path: String,
-        @JsonProperty("password") val password: String = "",
-        @JsonProperty("page") val page: Int = 1,
-        @JsonProperty("per_page") val per_page: Int = 100,
-        @JsonProperty("refresh") val refresh: Boolean = false
-    )
-
-    data class AListGetRequest(
-        @JsonProperty("path") val path: String,
-        @JsonProperty("password") val password: String = ""
-    )
-
-    data class AListResponse(
-        @JsonProperty("code") val code: Int? = null,
-        @JsonProperty("message") val message: String? = null,
-        @JsonProperty("data") val data: AListData? = null
-    )
-
-    data class AListGetFileResponse(
-        @JsonProperty("code") val code: Int? = null,
-        @JsonProperty("message") val message: String? = null,
-        @JsonProperty("data") val data: AListFileDetail? = null
-    )
-
-    data class AListData(
-        @JsonProperty("content") val content: List<AListItem>? = null,
-        @JsonProperty("total") val total: Int? = null,
-        @JsonProperty("readme") val readme: String? = null,
-        @JsonProperty("write") val write: Boolean? = null
-    )
-
     data class AListItem(
-        @JsonProperty("name") val name: String,
-        @JsonProperty("size") val size: Long? = null,
-        @JsonProperty("is_dir") val isDir: Boolean = false,
-        @JsonProperty("modified") val modified: String? = null,
-        @JsonProperty("sign") val sign: String? = null,
-        @JsonProperty("thumb") val thumb: String? = null,
-        @JsonProperty("type") val type: Int? = null
+        val name: String,
+        val size: Long = 0,
+        val isDir: Boolean = false,
+        val thumb: String? = null
     )
 
     data class AListFileDetail(
-        @JsonProperty("name") val name: String? = null,
-        @JsonProperty("size") val size: Long? = null,
-        @JsonProperty("is_dir") val isDir: Boolean = false,
-        @JsonProperty("raw_url") val rawUrl: String? = null,
-        @JsonProperty("thumb") val thumb: String? = null,
-        @JsonProperty("sign") val sign: String? = null
+        val name: String? = null,
+        val size: Long = 0,
+        val isDir: Boolean = false,
+        val rawUrl: String? = null,
+        val thumb: String? = null
     )
 
     data class ParsedName(
@@ -193,8 +157,8 @@ open class NagordolaProvider : MainAPI() {
     // AList API Helpers
     // -------------------------------------------------------------------------
 
-    private fun cleanPath(path: String): String {
-        var p = path.trim().replace("\\", "/")
+    private fun normalizePath(rawPath: String): String {
+        var p = rawPath.trim().replace("\\", "/")
         if (p.startsWith("http://") || p.startsWith("https://")) {
             p = try {
                 val u = java.net.URL(p)
@@ -205,37 +169,82 @@ open class NagordolaProvider : MainAPI() {
         }
         p = p.trimStart('/')
         if (p.startsWith("d/")) p = p.substring(2)
-        if (p.startsWith("p/")) p = p.substring(2)
-        return p.trim('/')
+        return "/" + p.trimStart('/')
+    }
+
+    private suspend fun executeAListListCall(targetPath: String, page: Int, perPage: Int): List<AListItem> {
+        val cleanBase = mainUrl.replace(Regex("/d/?$"), "/").trimEnd('/')
+        val jsonPayload = JSONObject().apply {
+            put("path", targetPath)
+            put("password", "")
+            put("page", page)
+            put("per_page", perPage)
+            put("refresh", false)
+        }.toString()
+
+        val reqBody = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+
+        val response = app.post(
+            url = "$cleanBase/api/fs/list",
+            requestBody = reqBody,
+            headers = mapOf(
+                "Content-Type" to "application/json",
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            )
+        ).text
+
+        val root = JSONObject(response)
+        if (root.optInt("code") == 200) {
+            val data = root.optJSONObject("data")
+            val contentArr = data?.optJSONArray("content")
+            if (contentArr != null && contentArr.length() > 0) {
+                val items = mutableListOf<AListItem>()
+                for (i in 0 until contentArr.length()) {
+                    val obj = contentArr.getJSONObject(i)
+                    items.add(
+                        AListItem(
+                            name = obj.optString("name"),
+                            size = obj.optLong("size", 0),
+                            isDir = obj.optBoolean("is_dir", false),
+                            thumb = obj.optString("thumb", null)
+                        )
+                    )
+                }
+                return items
+            }
+        }
+        return emptyList()
     }
 
     private suspend fun listAListDirectory(rawPath: String, page: Int = 1, perPage: Int = 1000): List<AListItem> {
         return withTimeoutOrNull(sectionFetchTimeoutMs) {
             try {
-                val clean = cleanPath(rawPath)
-                val fullCleanPath = if (clean.isEmpty()) "/p" else if (clean.startsWith("p")) "/$clean" else "/p/$clean"
-
-                val reqObj = AListRequest(
-                    path = fullCleanPath,
-                    password = "",
-                    page = page,
-                    per_page = perPage
-                )
-
-                val response = app.post(
-                    url = "$mainUrl/api/fs/list",
-                    json = reqObj,
-                    headers = mapOf(
-                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                    )
-                ).text
-
-                val parsed = parseJson<AListResponse>(response)
-                if (parsed.code == 200) {
-                    parsed.data?.content.orEmpty()
-                } else {
-                    emptyList()
+                val normalized = normalizePath(rawPath)
+                // First try the normalized path (e.g. "/p/movies/movies-english")
+                val primaryResult = executeAListListCall(normalized, page, perPage)
+                if (primaryResult.isNotEmpty()) {
+                    return@withTimeoutOrNull primaryResult
                 }
+
+                // Fallback 1: try without "/p" prefix (e.g. "/movies/movies-english")
+                if (normalized.startsWith("/p/")) {
+                    val fallback1 = "/" + normalized.substring(3)
+                    val res1 = executeAListListCall(fallback1, page, perPage)
+                    if (res1.isNotEmpty()) {
+                        return@withTimeoutOrNull res1
+                    }
+                }
+
+                // Fallback 2: try with "/p/" prefix if not already present
+                if (!normalized.startsWith("/p")) {
+                    val fallback2 = "/p" + normalized
+                    val res2 = executeAListListCall(fallback2, page, perPage)
+                    if (res2.isNotEmpty()) {
+                        return@withTimeoutOrNull res2
+                    }
+                }
+
+                emptyList()
             } catch (e: Exception) {
                 emptyList()
             }
@@ -245,24 +254,38 @@ open class NagordolaProvider : MainAPI() {
     private suspend fun getAListFile(rawPath: String): AListFileDetail? {
         return withTimeoutOrNull(sectionFetchTimeoutMs) {
             try {
-                val clean = cleanPath(rawPath)
-                val fullCleanPath = if (clean.isEmpty()) "/p" else if (clean.startsWith("p")) "/$clean" else "/p/$clean"
+                val normalized = normalizePath(rawPath)
+                val cleanBase = mainUrl.replace(Regex("/d/?$"), "/").trimEnd('/')
+                val jsonPayload = JSONObject().apply {
+                    put("path", normalized)
+                    put("password", "")
+                }.toString()
 
-                val reqObj = AListGetRequest(
-                    path = fullCleanPath,
-                    password = ""
-                )
+                val reqBody = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
 
                 val response = app.post(
-                    url = "$mainUrl/api/fs/get",
-                    json = reqObj,
+                    url = "$cleanBase/api/fs/get",
+                    requestBody = reqBody,
                     headers = mapOf(
+                        "Content-Type" to "application/json",
                         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                     )
                 ).text
 
-                val parsed = parseJson<AListGetFileResponse>(response)
-                if (parsed.code == 200) parsed.data else null
+                val root = JSONObject(response)
+                if (root.optInt("code") == 200) {
+                    val data = root.optJSONObject("data")
+                    if (data != null) {
+                        return@withTimeoutOrNull AListFileDetail(
+                            name = data.optString("name"),
+                            size = data.optLong("size", 0),
+                            isDir = data.optBoolean("is_dir", false),
+                            rawUrl = data.optString("raw_url", null),
+                            thumb = data.optString("thumb", null)
+                        )
+                    }
+                }
+                null
             } catch (e: Exception) {
                 null
             }
@@ -270,12 +293,12 @@ open class NagordolaProvider : MainAPI() {
     }
 
     private fun getDirectDownloadUrl(path: String): String {
-        val clean = cleanPath(path)
-        val fullPath = if (clean.startsWith("p/")) clean else "p/$clean"
-        val encoded = fullPath.split("/").joinToString("/") {
+        val normalized = normalizePath(path).trimStart('/')
+        val encoded = normalized.split("/").joinToString("/") {
             URLEncoder.encode(it, "UTF-8").replace("+", "%20")
         }
-        return "$mainUrl/d/$encoded"
+        val cleanBase = mainUrl.replace(Regex("/d/?$"), "").trimEnd('/')
+        return "$cleanBase/d/$encoded"
     }
 
     private fun parseMovieName(name: String): ParsedName {
@@ -396,11 +419,15 @@ open class NagordolaProvider : MainAPI() {
                 batch.map { entry ->
                     async {
                         val tmdbKey = "${entry.parsed.cleanTitle}_${entry.parsed.year ?: 0}_$isTv"
-                        val tmdb = getFromSearchCache(tmdbKey) ?: NagordolaTmdbHelper.searchTmdb(
-                            title = entry.parsed.cleanTitle,
-                            year = entry.parsed.year,
-                            isMovie = !isTv
-                        ).also { addToSearchCache(tmdbKey, it) }
+                        val tmdb = try {
+                            getFromSearchCache(tmdbKey) ?: NagordolaTmdbHelper.searchTmdb(
+                                title = entry.parsed.cleanTitle,
+                                year = entry.parsed.year,
+                                isMovie = !isTv
+                            ).also { addToSearchCache(tmdbKey, it) }
+                        } catch (e: Exception) {
+                            null
+                        }
 
                         val posterUrl = tmdb?.posterPath?.let { NagordolaTmdbHelper.getPosterUrl(it, isDetail = false) }
 
@@ -452,11 +479,15 @@ open class NagordolaProvider : MainAPI() {
                     async {
                         val isTv = entry.isTvSeries
                         val tmdbKey = "${entry.parsed.cleanTitle}_${entry.parsed.year ?: 0}_$isTv"
-                        val tmdb = getFromSearchCache(tmdbKey) ?: NagordolaTmdbHelper.searchTmdb(
-                            title = entry.parsed.cleanTitle,
-                            year = entry.parsed.year,
-                            isMovie = !isTv
-                        ).also { addToSearchCache(tmdbKey, it) }
+                        val tmdb = try {
+                            getFromSearchCache(tmdbKey) ?: NagordolaTmdbHelper.searchTmdb(
+                                title = entry.parsed.cleanTitle,
+                                year = entry.parsed.year,
+                                isMovie = !isTv
+                            ).also { addToSearchCache(tmdbKey, it) }
+                        } catch (e: Exception) {
+                            null
+                        }
 
                         val posterUrl = tmdb?.posterPath?.let { NagordolaTmdbHelper.getPosterUrl(it, isDetail = false) }
 
@@ -487,18 +518,26 @@ open class NagordolaProvider : MainAPI() {
     // -------------------------------------------------------------------------
 
     override suspend fun load(url: String): LoadResponse {
-        val path = cleanPath(url)
+        val path = normalizePath(url)
         val isTv = path.contains("tv-series") || path.contains("tvshows")
         val parsed = parseMovieName(path.substringAfterLast('/'))
 
-        val tmdb = NagordolaTmdbHelper.searchTmdb(
-            title = parsed.cleanTitle,
-            year = parsed.year,
-            isMovie = !isTv
-        )
+        val tmdb = try {
+            NagordolaTmdbHelper.searchTmdb(
+                title = parsed.cleanTitle,
+                year = parsed.year,
+                isMovie = !isTv
+            )
+        } catch (e: Exception) {
+            null
+        }
 
-        val tmdbDetails = tmdb?.id?.let { NagordolaTmdbHelper.getTmdbDetails(it, isMovie = !isTv) }
-        val imdbId = tmdb?.id?.let { NagordolaTmdbHelper.getImdbIdFromTmdb(it, isMovie = !isTv) }
+        val tmdbDetails = tmdb?.id?.let {
+            try { NagordolaTmdbHelper.getTmdbDetails(it, isMovie = !isTv) } catch (e: Exception) { null }
+        }
+        val imdbId = tmdb?.id?.let {
+            try { NagordolaTmdbHelper.getImdbIdFromTmdb(it, isMovie = !isTv) } catch (e: Exception) { null }
+        }
 
         val posterUrl = (tmdbDetails?.posterPath ?: tmdb?.posterPath)?.let {
             NagordolaTmdbHelper.getPosterUrl(it, isDetail = true)
@@ -604,7 +643,7 @@ open class NagordolaProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val clean = cleanPath(data)
+        val clean = normalizePath(data)
 
         // Check if data is already a direct video file
         if (clean.contains(videoExtRegex)) {
@@ -649,6 +688,7 @@ open class NagordolaProvider : MainAPI() {
             else -> parsed.quality ?: "HD"
         }
 
+        val cleanBase = mainUrl.replace(Regex("/d/?$"), "").trimEnd('/')
         callback(
             newExtractorLink(
                 source = name,
@@ -658,7 +698,7 @@ open class NagordolaProvider : MainAPI() {
             ) {
                 this.headers = mapOf(
                     "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Referer" to "$mainUrl/"
+                    "Referer" to "$cleanBase/"
                 )
             }
         )
