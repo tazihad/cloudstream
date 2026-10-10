@@ -104,13 +104,13 @@ class CinePlexProvider : MainAPI() {
         return if (isTv) {
             newTvSeriesSearchResponse(title, fullHref, type) {
                 this.posterUrl = posterUrl
-                if (rating != null) this.score = Score(rating, 10)
+                if (rating != null) this.score = Score.from10(rating)
                 if (year != null) this.year = year
             }
         } else {
             newMovieSearchResponse(title, fullHref, type) {
                 this.posterUrl = posterUrl
-                if (rating != null) this.score = Score(rating, 10)
+                if (rating != null) this.score = Score.from10(rating)
                 if (year != null) this.year = year
             }
         }
@@ -215,7 +215,7 @@ class CinePlexProvider : MainAPI() {
             this.plot = plot
             this.tags = tags
             if (actors.isNotEmpty()) this.actors = actors
-            if (rating != null) this.score = Score(rating, 10)
+            if (rating != null) this.score = Score.from10(rating)
         }
     }
 
@@ -277,7 +277,7 @@ class CinePlexProvider : MainAPI() {
             this.year = year
             this.plot = plot
             this.tags = tags
-            if (rating != null) this.score = Score(rating, 10)
+            if (rating != null) this.score = Score.from10(rating)
         }
     }
 
