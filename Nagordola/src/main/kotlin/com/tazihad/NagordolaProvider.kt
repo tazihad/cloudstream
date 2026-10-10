@@ -80,6 +80,7 @@ open class NagordolaProvider : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
+        "trending_today" to "Top 10 Trending Today",
         *sectionDefs.map { it.key to it.value.first }.toTypedArray()
     )
 
@@ -116,6 +117,10 @@ open class NagordolaProvider : MainAPI() {
         private const val TAG = "NagordolaProvider"
         private val cachedCategories = ConcurrentHashMap<String, List<PreCrawledMovie>>()
         private val videoExtRegex = Regex("\\.(mp4|mkv|avi|webm|mov|m4v|flv|ts|m2ts)$", RegexOption.IGNORE_CASE)
+        private const val DEFAULT_TMDB_API_KEY = "cdb4d6683a4de1f186e7da86dccdd7f1"
+        private const val TRENDING_CACHE_TTL_MS = 2 * 60 * 60 * 1000L // 2 hours
+        @Volatile private var cachedTrending: List<SearchResponse>? = null
+        @Volatile private var lastTrendingFetchTime = 0L
     }
 
     // -------------------------------------------------------------------------
@@ -262,6 +267,13 @@ open class NagordolaProvider : MainAPI() {
     // -------------------------------------------------------------------------
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
+        if (request.data == "trending_today") {
+            if (page > 1) return null
+            val trendingItems = getTrendingItems()
+            if (trendingItems.isEmpty()) return null
+            return newHomePageResponse(request.name, trendingItems, hasNext = false)
+        }
+
         val fileName = request.data
         val def = sectionDefs[fileName]
         val isTv = fileName.startsWith("tvshows") || fileName.contains("anime") && fileName.contains("tv")
@@ -305,6 +317,187 @@ open class NagordolaProvider : MainAPI() {
 
         val hasNext = (startIndex + itemsPerPage) < allItems.size
         return newHomePageResponse(request.name, results, hasNext)
+    }
+
+    private suspend fun getTrendingItems(): List<SearchResponse> {
+        val now = System.currentTimeMillis()
+        val cached = cachedTrending
+        if (cached != null && (now - lastTrendingFetchTime) < TRENDING_CACHE_TTL_MS) {
+            return cached
+        }
+
+        val items = withContext(Dispatchers.IO) {
+            fetchTrendingFromTmdb()
+        }
+
+        if (items.isNotEmpty()) {
+            cachedTrending = items
+            lastTrendingFetchTime = now
+            return items
+        }
+
+        val fallback = getFallbackTrending()
+        if (fallback.isNotEmpty()) {
+            cachedTrending = fallback
+            lastTrendingFetchTime = now
+            return fallback
+        }
+
+        return emptyList()
+    }
+
+    private suspend fun fetchTrendingFromTmdb(): List<SearchResponse> {
+        sectionDefs.keys.forEach { loadCategory(it) }
+
+        val movieByTmdb = mutableMapOf<Long, Triple<String, Int, PreCrawledMovie>>()
+        for ((fileName, list) in cachedCategories) {
+            for ((idx, movie) in list.withIndex()) {
+                val tid = movie.tmdbId
+                if (tid != null && !movieByTmdb.containsKey(tid)) {
+                    movieByTmdb[tid] = Triple(fileName, idx, movie)
+                }
+            }
+        }
+
+        val apiKey = NagordolaSettingsManager.getApiKey()?.ifBlank { null } ?: DEFAULT_TMDB_API_KEY
+
+        data class TmdbTrendingItem(val id: Long, val posterPath: String?)
+        val trendingItems = mutableListOf<TmdbTrendingItem>()
+        val seenIds = mutableSetOf<Long>()
+
+        val endpoints = listOf("trending/all/day", "trending/all/week")
+        for (ep in endpoints) {
+            for (p in 1..3) {
+                try {
+                    val url = "https://api.themoviedb.org/3/$ep?api_key=$apiKey&page=$p"
+                    val resp = withTimeoutOrNull(5000L) {
+                        app.get(url, headers = mapOf("User-Agent" to "Mozilla/5.0")).text
+                    }
+                    if (!resp.isNullOrBlank()) {
+                        val root = JSONObject(resp)
+                        val results = root.optJSONArray("results")
+                        if (results != null) {
+                            for (i in 0 until results.length()) {
+                                val obj = results.getJSONObject(i)
+                                val id = obj.optLong("id")
+                                if (id > 0 && seenIds.add(id)) {
+                                    val poster = obj.optString("poster_path").takeIf { it.isNotBlank() && it != "null" }
+                                    trendingItems.add(TmdbTrendingItem(id, poster))
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Failed fetching TMDB trending ($ep page $p): ${e.message}")
+                }
+                if (trendingItems.count { movieByTmdb.containsKey(it.id) } >= 10) break
+            }
+            if (trendingItems.count { movieByTmdb.containsKey(it.id) } >= 10) break
+        }
+
+        val matchedResults = mutableListOf<SearchResponse>()
+        val addedKeys = mutableSetOf<String>()
+
+        for (item in trendingItems) {
+            val match = movieByTmdb[item.id] ?: continue
+            val (fileName, idx, movie) = match
+            val key = "$fileName/$idx"
+            if (!addedKeys.add(key)) continue
+
+            val itemData = encodeItemData(fileName, idx, movie)
+            val yearInt = movie.year?.take(4)?.toIntOrNull()
+            val scoreVal = movie.rating?.let { Score.from10(it) }
+            val isTv = movie.isTvSeries || fileName.startsWith("tvshows")
+
+            val posterUrl = item.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
+                ?: movie.posterUrl?.replace("/w342/", "/w500/")
+                ?: movie.posterUrl
+
+            if (isTv) {
+                matchedResults.add(
+                    newAnimeSearchResponse(movie.title, itemData, TvType.TvSeries) {
+                        this.posterUrl = posterUrl
+                        this.year = yearInt
+                        this.score = scoreVal
+                    }
+                )
+            } else {
+                matchedResults.add(
+                    newMovieSearchResponse(movie.title, itemData, TvType.Movie) {
+                        this.posterUrl = posterUrl
+                        this.year = yearInt
+                        this.score = scoreVal
+                    }
+                )
+            }
+
+            if (matchedResults.size >= 10) break
+        }
+
+        if (matchedResults.size < 10) {
+            val fallback = getFallbackTrending()
+            for (fb in fallback) {
+                if (matchedResults.none { it.url == fb.url }) {
+                    matchedResults.add(fb)
+                }
+                if (matchedResults.size >= 10) break
+            }
+        }
+
+        return matchedResults
+    }
+
+    private fun getFallbackTrending(): List<SearchResponse> {
+        sectionDefs.keys.forEach { loadCategory(it) }
+
+        val candidateList = mutableListOf<Pair<String, Pair<Int, PreCrawledMovie>>>()
+        for ((fileName, list) in cachedCategories) {
+            for ((idx, movie) in list.withIndex()) {
+                val year = movie.year?.take(4)?.toIntOrNull() ?: 0
+                val rating = movie.rating ?: 0.0
+                if (year >= 2022 && rating >= 7.0 && !movie.posterUrl.isNullOrBlank()) {
+                    candidateList.add(fileName to (idx to movie))
+                }
+            }
+        }
+
+        candidateList.sortWith(
+            compareByDescending<Pair<String, Pair<Int, PreCrawledMovie>>> { it.second.second.rating ?: 0.0 }
+                .thenByDescending { it.second.second.year?.take(4)?.toIntOrNull() ?: 0 }
+        )
+
+        val results = mutableListOf<SearchResponse>()
+        for ((fileName, pair) in candidateList) {
+            val (idx, movie) = pair
+            val itemData = encodeItemData(fileName, idx, movie)
+            val yearInt = movie.year?.take(4)?.toIntOrNull()
+            val scoreVal = movie.rating?.let { Score.from10(it) }
+            val isTv = movie.isTvSeries || fileName.startsWith("tvshows")
+
+            val posterUrl = movie.posterUrl?.replace("/w342/", "/w500/") ?: movie.posterUrl
+
+            if (isTv) {
+                results.add(
+                    newAnimeSearchResponse(movie.title, itemData, TvType.TvSeries) {
+                        this.posterUrl = posterUrl
+                        this.year = yearInt
+                        this.score = scoreVal
+                    }
+                )
+            } else {
+                results.add(
+                    newMovieSearchResponse(movie.title, itemData, TvType.Movie) {
+                        this.posterUrl = posterUrl
+                        this.year = yearInt
+                        this.score = scoreVal
+                    }
+                )
+            }
+
+            if (results.size >= 10) break
+        }
+
+        return results
     }
 
     // -------------------------------------------------------------------------
