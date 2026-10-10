@@ -40,7 +40,7 @@ class FlixHubProvider : MainAPI() {
     override val hasDownloadSupport = true
     override val hasQuickSearch = false
     override val instantLinkLoading = true
-    override var lang = "en"
+    override var lang = "bn"
     override val supportedTypes = setOf(
         TvType.Movie,
         TvType.TvSeries,

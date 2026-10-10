@@ -1,5 +1,5 @@
 // use an integer for version numbers
-version = 1
+version = 2
 
 android {
     namespace = "com.tazihad"
@@ -29,5 +29,6 @@ cloudstream {
         "Others",
         "Documentary",
     )
-    language = "en"
+    language = "bn"
 }
+
