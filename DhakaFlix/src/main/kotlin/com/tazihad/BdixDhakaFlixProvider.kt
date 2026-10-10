@@ -1,5 +1,7 @@
 package com.tazihad
 
+import com.lagradost.cloudstream3.Actor
+import com.lagradost.cloudstream3.ActorData
 import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -164,6 +166,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
         private val seasonDetailsCache = Collections.synchronizedMap(mutableMapOf<String, Pair<TmdbSeasonDetails?, Long>>())
         private val bulkSeasonCache = Collections.synchronizedMap(mutableMapOf<String, Pair<Map<Int, TmdbSeasonDetails?>, Long>>())
         private val yearRowsCache = Collections.synchronizedMap(mutableMapOf<String, Pair<List<RowEntry>?, Long>>())
+        private val creditsCache = Collections.synchronizedMap(mutableMapOf<String, Pair<List<ActorData>?, Long>>())
 
         fun getPosterCache(): MutableMap<String, Pair<String?, Long>> = posterCache
         fun getSearchCache(): MutableMap<String, Pair<TmdbSearchResult?, Long>> = searchCache
@@ -171,6 +174,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
         fun getSeasonDetailsCache(): MutableMap<String, Pair<TmdbSeasonDetails?, Long>> = seasonDetailsCache
         fun getBulkSeasonCache(): MutableMap<String, Pair<Map<Int, TmdbSeasonDetails?>, Long>> = bulkSeasonCache
         fun getYearRowsCache(): MutableMap<String, Pair<List<RowEntry>?, Long>> = yearRowsCache
+        fun getCreditsCache(): MutableMap<String, Pair<List<ActorData>?, Long>> = creditsCache
 
         fun <T> getFromCache(
             cache: MutableMap<String, Pair<T?, Long>>,
@@ -214,6 +218,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
                 getSeasonDetailsCache().clear()
                 getBulkSeasonCache().clear()
                 getYearRowsCache().clear()
+                getCreditsCache().clear()
             }
         }
     }
@@ -280,6 +285,23 @@ open class BdixDhakaFlixProvider : MainAPI() {
         val result = TmdbHelper.searchTmdb(cleanName, isMovie)
         providerCache.addToCache(providerCache.getSearchCache(), cacheKey, result)
         return@coroutineScope result
+    }
+
+    private suspend fun lazyLoadCredits(
+        tmdbId: Int,
+        isMovie: Boolean
+    ): List<ActorData>? {
+        val cacheKey = "$tmdbId:$isMovie"
+        val providerCache = getProviderCache(name)
+        providerCache.getFromCache(providerCache.getCreditsCache(), cacheKey, TMDB_CACHE_DURATION)?.let {
+            return it
+        }
+
+        val credits = TmdbHelper.getCredits(tmdbId, isMovie)
+        if (!credits.isNullOrEmpty()) {
+            providerCache.addToCache(providerCache.getCreditsCache(), cacheKey, credits)
+        }
+        return credits
     }
 
     // Bulk load all TMDB data for a TV series to minimize API calls
@@ -640,9 +662,10 @@ open class BdixDhakaFlixProvider : MainAPI() {
         // Determine if this is a TV series, anime, or movie based on URL
         val isAnimeContent = isAnime(url)
         val isTvSeries = containsAnyLoop(url, server.tvSeriesKeyword)
+        val isMovie = !(isTvSeries || isAnimeContent)
         
-          // Load TMDB data with details since this is a detail view
-        val tmdbData = lazyLoadTmdbData(name, isMovie = !(isTvSeries || isAnimeContent), loadDetails = true)
+        // Load TMDB data with details since this is a detail view
+        val tmdbData = lazyLoadTmdbData(name, isMovie = isMovie, loadDetails = true)
         
         // Priority 1: Try to get local poster from content folder first
         imageLink = findPosterUrl(url) ?: ""
@@ -652,6 +675,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
             imageLink = tmdbData?.posterPath?.let { TmdbHelper.getPosterUrl(it, isDetail = true) } ?: ""
         }
         
+        var backdropUrl: String? = null
         if (tmdbData != null) {
             tmdbId = tmdbData.id
             plot = tmdbData.overview
@@ -659,12 +683,17 @@ open class BdixDhakaFlixProvider : MainAPI() {
             tmdbData.releaseDate?.split("-")?.firstOrNull()?.toIntOrNull()?.let {
                 if (year == null) year = it
             }
+            backdropUrl = tmdbData.backdropPath?.let { TmdbHelper.getBackdropUrl(it, isDetail = true) }
         }
 
         // Extract year if present in the name
         if (year == null) {
             year = extractYear(name)
         }
+
+        val actors = if (tmdbId != null) {
+            lazyLoadCredits(tmdbId, isMovie = isMovie)
+        } else null
 
         if (isTvSeries || isAnimeContent) {
             val imdbId = tmdbId?.let { TmdbHelper.getImdbIdFromTmdb(it, isMovie = false) }
@@ -774,9 +803,11 @@ open class BdixDhakaFlixProvider : MainAPI() {
             
             newTvSeriesLoadResponse(name, url, tvType, episodesData) {
                 this.posterUrl = imageLink
+                this.backgroundPosterUrl = backdropUrl
                 this.plot = plot
                 this.year = year
                 this.score = tmdbData?.rating?.let { Score.from10(it) }
+                if (!actors.isNullOrEmpty()) this.actors = actors
                 addTMDbId(tmdbId?.toString())
                 addImdbId(imdbId)
             }
@@ -787,7 +818,7 @@ open class BdixDhakaFlixProvider : MainAPI() {
                 if (folderHtml.isNotEmpty()) {
                     val fileName = folderHtml.text()
                     if (fileName.contains(Regex("\\.(mkv|mp4|avi)$", RegexOption.IGNORE_CASE))) {
-link = server.url + folderHtml.attr("href")
+                        link = server.url + folderHtml.attr("href")
                     }
                 }
             }
@@ -797,9 +828,11 @@ link = server.url + folderHtml.attr("href")
             
             newMovieLoadResponse(name, url, movieType, link) {
                 this.posterUrl = imageLink
+                this.backgroundPosterUrl = backdropUrl
                 this.plot = plot
                 this.year = year
                 this.score = tmdbData?.rating?.let { Score.from10(it) }
+                if (!actors.isNullOrEmpty()) this.actors = actors
                 addTMDbId(tmdbId?.toString())
                 addImdbId(imdbId)
             }

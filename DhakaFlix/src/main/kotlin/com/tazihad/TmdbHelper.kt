@@ -1,6 +1,8 @@
 package com.tazihad
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.lagradost.cloudstream3.Actor
+import com.lagradost.cloudstream3.ActorData
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import android.util.Log
@@ -19,6 +21,7 @@ data class TmdbSearchResult(
     @param:JsonProperty("name") val name: String? = null,
     @param:JsonProperty("overview") val overview: String? = null,
     @param:JsonProperty("poster_path") val posterPath: String? = null,
+    @param:JsonProperty("backdrop_path") val backdropPath: String? = null,
     @param:JsonProperty("release_date") val releaseDate: String? = null,
     @param:JsonProperty("vote_average") val rating: Double? = null
 )
@@ -26,8 +29,20 @@ data class TmdbSearchResult(
 data class TmdbDetails(
     @param:JsonProperty("overview") val overview: String? = null,
     @param:JsonProperty("poster_path") val posterPath: String? = null,
+    @param:JsonProperty("backdrop_path") val backdropPath: String? = null,
     @param:JsonProperty("vote_average") val rating: Double? = null,
     @param:JsonProperty("release_date") val releaseDate: String? = null
+)
+
+data class TmdbCreditsResponse(
+    @param:JsonProperty("cast") val cast: List<TmdbCastMember>? = null
+)
+
+data class TmdbCastMember(
+    @param:JsonProperty("name") val name: String? = null,
+    @param:JsonProperty("character") val character: String? = null,
+    @param:JsonProperty("profile_path") val profilePath: String? = null,
+    @param:JsonProperty("order") val order: Int? = null
 )
 
 data class TmdbEpisodeDetails(
@@ -73,12 +88,55 @@ object TmdbHelper {
         const val STILL_LARGE = "w300"      // Large still size
     }
 
+    private const val DEFAULT_TMDB_API_KEY = "cdb4d6683a4de1f186e7da86dccdd7f1"
+
     private fun getApiKey(): String {
         return try {
-            DhakaFlixSettingsManager.getApiKey() ?: return ""
+            val key = DhakaFlixSettingsManager.getApiKey()
+            if (!key.isNullOrBlank()) key else DEFAULT_TMDB_API_KEY
         } catch (e: Exception) {
             Log.e(TAG, "Error getting API key: ${e.message}")
-            ""
+            DEFAULT_TMDB_API_KEY
+        }
+    }
+
+    fun getProfileUrl(path: String?): String? {
+        if (path.isNullOrBlank()) return null
+        return "$TMDB_IMAGE_BASE_URL/w185$path"
+    }
+
+    suspend fun getCredits(
+        tmdbId: Int,
+        isMovie: Boolean = true
+    ): List<ActorData>? {
+        if (!DhakaFlixSettingsManager.isTmdbEnabled()) {
+            return null
+        }
+
+        val apiKey = getApiKey()
+        if (apiKey.isEmpty()) {
+            return null
+        }
+
+        val type = if (isMovie) "movie" else "tv"
+        val url = "$TMDB_API/$type/$tmdbId/credits?api_key=$apiKey"
+
+        return try {
+            val response = makeApiCall(url) ?: return null
+            val credits = parseJson<TmdbCreditsResponse>(response)
+            credits.cast?.take(20)?.mapNotNull { member ->
+                val name = member.name?.trim() ?: return@mapNotNull null
+                if (name.isBlank()) return@mapNotNull null
+                val role = member.character?.trim()?.ifBlank { null }
+                val profileUrl = getProfileUrl(member.profilePath)
+                ActorData(
+                    actor = Actor(name, profileUrl),
+                    roleString = role
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting credits: ${e.message}")
+            null
         }
     }
 
