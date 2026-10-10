@@ -35,6 +35,7 @@ Once the repository is added, refresh it and install your desired extensions.
 | **Infobase** | Multi-HDD media library (Movies, Series, Anime) | `http://103.225.94.27` | BDIX Only |
 | **Nagordola** | AList CDN provider with bundled pre-crawled database | `https://cdn.nagordola.com.bd` | CDN / BDIX / Broadband |
 | **RoyalFlix** | Multi-disk BDIX entertainment server | `http://royalflix.net` | BDIX Only |
+| **CinePlex** | Modern BDIX streaming portal (Movies & HLS TV Series) | `http://cineplexbd.net` | BDIX Only |
 
 > **Network Note:** Servers marked as **BDIX Only** are accessible only when connected to an ISP peered with the **BDIX (Bangladesh Internet Exchange)** network. Nagordola connects via high-speed CDN and bundled metadata.
 
@@ -75,6 +76,10 @@ AList CDN streaming extension with an offline pre-crawled database architecture:
 #### 6. RoyalFlix
 Multi-disk media repository:
 - `http://royalflix.net`: Hollywood (New & Classic), Bollywood, South Indian, Bangla, TV Shows, and Documentaries across `disk1` through `disk6`.
+
+#### 7. CinePlex
+Modern high-speed BDIX streaming portal:
+- `http://cineplexbd.net`: English, Hindi, Bangla, Dual Audio, Animation, Anime, Korean, 4K, Foreign movies with direct progressive streaming, and multi-season TV series with HLS playback, Weekly Top 20 Trending banner, and instant search.
 
 ---
 
