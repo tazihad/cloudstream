@@ -36,8 +36,9 @@ Once the repository is added, refresh it and install your desired extensions.
 | **Nagordola** | AList CDN provider with bundled pre-crawled database | `https://cdn.nagordola.com.bd` | CDN / BDIX / Broadband |
 | **RoyalFlix** | Multi-disk BDIX entertainment server | `http://royalflix.net` | BDIX Only |
 | **CinePlex** | Modern BDIX streaming portal (Movies & HLS TV Series) | `http://cineplexbd.net` | BDIX Only |
+| **FlixHub** | Full-featured media portal with Movies, TV Series, Cast & Subtitles | `https://flixhub.net` | Broadband / Global |
 
-> **Network Note:** Servers marked as **BDIX Only** are accessible only when connected to an ISP peered with the **BDIX (Bangladesh Internet Exchange)** network. Nagordola connects via high-speed CDN and bundled metadata.
+> **Network Note:** Servers marked as **BDIX Only** are accessible only when connected to an ISP peered with the **BDIX (Bangladesh Internet Exchange)** network. Nagordola and FlixHub connect via broadband/CDN with global accessibility.
 
 ---
 
@@ -80,6 +81,10 @@ Multi-disk media repository:
 #### 7. CinePlex
 Modern high-speed BDIX streaming portal:
 - `http://cineplexbd.net`: English, Hindi, Bangla, Dual Audio, Animation, Anime, Korean, 4K, Foreign movies with direct progressive streaming, and multi-season TV series with HLS playback, Weekly Top 20 Trending banner, and instant search.
+
+#### 8. FlixHub
+High-speed full-featured streaming portal:
+- `https://flixhub.net`: Hollywood, Bollywood, South Indian, KidzTime, Action, Adventure movies and full TV Series archives with multi-season episode tracking, Hero Spotlight carousel, cast/actor details, instant JSON search, and embedded WebVTT subtitle support.
 
 ---
 
