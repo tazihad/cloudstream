@@ -28,7 +28,6 @@ cloudstream {
         "Documentary"
     )
     language = "bn"
-    requiresResources = true
 }
 
 afterEvaluate {
