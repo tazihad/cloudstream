@@ -1,5 +1,5 @@
 // use an integer for version numbers
-version = 3
+version = 4
 
 android {
     namespace = "com.tazihad"
@@ -28,6 +28,7 @@ cloudstream {
         "Documentary"
     )
     language = "bn"
+    requiresResources = true
 }
 
 afterEvaluate {

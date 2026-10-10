@@ -37,10 +37,12 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
+import java.io.File
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import java.util.zip.ZipFile
 
 open class NagordolaProvider : MainAPI() {
     override var mainUrl: String
@@ -121,6 +123,9 @@ open class NagordolaProvider : MainAPI() {
         private const val TRENDING_CACHE_TTL_MS = 2 * 60 * 60 * 1000L // 2 hours
         @Volatile private var cachedTrending: List<SearchResponse>? = null
         @Volatile private var lastTrendingFetchTime = 0L
+        private val trendingBackdrops = ConcurrentHashMap<String, String>()
+        private val trendingPosters = ConcurrentHashMap<String, String>()
+        private val cachedBackdrops = ConcurrentHashMap<Long, String>()
     }
 
     // -------------------------------------------------------------------------
@@ -143,7 +148,65 @@ open class NagordolaProvider : MainAPI() {
     private fun loadCategory(fileName: String): List<PreCrawledMovie> {
         cachedCategories[fileName]?.let { return it }
 
-        // 1. Try ClassLoader resources (bundled in .cs3 zip / jar)
+        // 1. Direct ZipFile read from downloaded .cs3 plugin package on disk
+        try {
+            val cs3Path = NagordolaPlugin.pluginInstance?.filename
+            if (!cs3Path.isNullOrBlank()) {
+                val cs3File = File(cs3Path)
+                if (cs3File.exists()) {
+                    ZipFile(cs3File).use { zip ->
+                        val entry = zip.getEntry("assets/database/nagordola/$fileName")
+                            ?: zip.getEntry("database/nagordola/$fileName")
+                        if (entry != null) {
+                            val json = zip.getInputStream(entry).bufferedReader(Charsets.UTF_8).use { it.readText() }
+                            val items = parseMovies(json)
+                            if (items.isNotEmpty()) {
+                                cachedCategories[fileName] = items
+                                return items
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "ZipFile read failed for $fileName: ${e.message}")
+        }
+
+        // 2. Try Android AssetManager from plugin resources (requiresResources = true)
+        try {
+            val pluginRes = NagordolaPlugin.pluginInstance?.resources
+            val stream = pluginRes?.assets?.open("assets/database/nagordola/$fileName")
+                ?: pluginRes?.assets?.open("database/nagordola/$fileName")
+            if (stream != null) {
+                val json = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val items = parseMovies(json)
+                if (items.isNotEmpty()) {
+                    cachedCategories[fileName] = items
+                    return items
+                }
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Plugin resources AssetManager failed for $fileName: ${e.message}")
+        }
+
+        // 3. Try Android AssetManager from context
+        try {
+            val ctx = NagordolaPlugin.pluginContext ?: CloudStreamApp.context
+            val stream = ctx?.assets?.open("database/nagordola/$fileName")
+                ?: ctx?.assets?.open("assets/database/nagordola/$fileName")
+            if (stream != null) {
+                val json = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val items = parseMovies(json)
+                if (items.isNotEmpty()) {
+                    cachedCategories[fileName] = items
+                    return items
+                }
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "AssetManager load failed for $fileName: ${e.message}")
+        }
+
+        // 4. Try ClassLoader resources (bundled in .cs3 zip / jar)
         try {
             val classLoader = NagordolaProvider::class.java.classLoader
             val stream = classLoader?.getResourceAsStream("assets/database/nagordola/$fileName")
@@ -162,24 +225,7 @@ open class NagordolaProvider : MainAPI() {
             Log.d(TAG, "ClassLoader resource load failed for $fileName: ${e.message}")
         }
 
-        // 2. Try Android AssetManager from pluginContext or App context
-        try {
-            val ctx = NagordolaPlugin.pluginContext ?: CloudStreamApp.context
-            val stream = ctx?.assets?.open("database/nagordola/$fileName")
-                ?: ctx?.assets?.open("assets/database/nagordola/$fileName")
-            if (stream != null) {
-                val json = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val items = parseMovies(json)
-                if (items.isNotEmpty()) {
-                    cachedCategories[fileName] = items
-                    return items
-                }
-            }
-        } catch (e: Exception) {
-            Log.d(TAG, "AssetManager load failed for $fileName: ${e.message}")
-        }
-
-        // 3. Fallback: fetch from PotFlix GitHub repository raw database
+        // 5. Fallback: fetch from PotFlix GitHub repository raw database
         try {
             val remoteUrl = "https://raw.githubusercontent.com/ReduanNurLabid/PotFlix/main/app/src/main/assets/database/nagordola/$fileName"
             val response = runBlocking {
@@ -198,7 +244,7 @@ open class NagordolaProvider : MainAPI() {
             Log.d(TAG, "PotFlix remote database load failed for $fileName: ${e.message}")
         }
 
-        // 4. Fallback: fetch from Tazihad GitHub repository raw database
+        // 6. Fallback: fetch from Tazihad GitHub repository raw database
         try {
             val remoteUrl2 = "https://raw.githubusercontent.com/tazihad/cloudstream/master/Nagordola/src/main/assets/database/nagordola/$fileName"
             val response2 = runBlocking {
@@ -234,12 +280,19 @@ open class NagordolaProvider : MainAPI() {
     }
 
     private fun encodeItemData(fileName: String, index: Int, movie: PreCrawledMovie): String {
-        return "nagordola://$fileName/$index"
+        val titleEnc = URLEncoder.encode(movie.title, "UTF-8")
+        val posterEnc = URLEncoder.encode(movie.posterUrl ?: "", "UTF-8")
+        val tmdb = movie.tmdbId ?: 0
+        val isTv = movie.isTvSeries
+        return "nagordola://$fileName/$index?title=$titleEnc&poster=$posterEnc&tmdb=$tmdb&isTv=$isTv"
     }
 
     private fun findMovieByData(data: String): PreCrawledMovie? {
         if (data.startsWith("nagordola://")) {
-            val parts = data.removePrefix("nagordola://").split('/')
+            val cleanData = data.removePrefix("nagordola://")
+            val pathPart = cleanData.substringBefore('?')
+            val queryPart = cleanData.substringAfter('?', "")
+            val parts = pathPart.split('/')
             if (parts.size >= 2) {
                 val fileName = parts[0]
                 val index = parts[1].toIntOrNull()
@@ -250,12 +303,33 @@ open class NagordolaProvider : MainAPI() {
                     }
                 }
             }
+
+            // Fallback: restore movie metadata from query parameters if index wasn't found
+            if (queryPart.isNotEmpty()) {
+                val params = queryPart.split('&').associate {
+                    val kv = it.split('=', limit = 2)
+                    kv[0] to (if (kv.size > 1) URLDecoder.decode(kv[1], "UTF-8") else "")
+                }
+                val title = params["title"]
+                if (!title.isNullOrBlank()) {
+                    val poster = params["poster"]?.ifBlank { null }
+                    val tmdbId = params["tmdb"]?.toLongOrNull()?.takeIf { it > 0 }
+                    val isTv = params["isTv"]?.toBoolean() ?: false
+                    return PreCrawledMovie(
+                        title = title,
+                        posterUrl = poster,
+                        tmdbId = tmdbId,
+                        isTvSeries = isTv
+                    )
+                }
+            }
         }
 
         // Fallback: search across all cached categories by url or title
+        val rawData = data.substringBefore('?')
         for ((_, list) in cachedCategories) {
             val found = list.find { movie ->
-                movie.videos.any { it.url == data || toStreamUrl(it.url ?: "") == data } || movie.title == data
+                movie.videos.any { it.url == rawData || toStreamUrl(it.url ?: "") == rawData } || movie.title == rawData
             }
             if (found != null) return found
         }
@@ -361,11 +435,17 @@ open class NagordolaProvider : MainAPI() {
 
         val apiKey = NagordolaSettingsManager.getApiKey()?.ifBlank { null } ?: DEFAULT_TMDB_API_KEY
 
-        data class TmdbTrendingItem(val id: Long, val posterPath: String?)
+        data class TmdbTrendingItem(val id: Long, val posterPath: String?, val backdropPath: String?)
         val trendingItems = mutableListOf<TmdbTrendingItem>()
         val seenIds = mutableSetOf<Long>()
 
-        val endpoints = listOf("trending/all/day", "trending/all/week")
+        val endpoints = listOf(
+            "trending/all/day",
+            "trending/all/week",
+            "movie/popular",
+            "tv/popular",
+            "movie/now_playing"
+        )
         for (ep in endpoints) {
             for (p in 1..3) {
                 try {
@@ -382,7 +462,8 @@ open class NagordolaProvider : MainAPI() {
                                 val id = obj.optLong("id")
                                 if (id > 0 && seenIds.add(id)) {
                                     val poster = obj.optString("poster_path").takeIf { it.isNotBlank() && it != "null" }
-                                    trendingItems.add(TmdbTrendingItem(id, poster))
+                                    val backdrop = obj.optString("backdrop_path").takeIf { it.isNotBlank() && it != "null" }
+                                    trendingItems.add(TmdbTrendingItem(id, poster, backdrop))
                                 }
                             }
                         }
@@ -412,6 +493,18 @@ open class NagordolaProvider : MainAPI() {
             val posterUrl = item.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
                 ?: movie.posterUrl?.replace("/w342/", "/w500/")
                 ?: movie.posterUrl
+
+            val backdropUrl = item.backdropPath?.let { "https://image.tmdb.org/t/p/w1280$it" }
+                ?: posterUrl?.replace("/w342/", "/w780/")
+                ?: posterUrl
+
+            if (backdropUrl != null) {
+                trendingBackdrops[itemData] = backdropUrl
+                movie.tmdbId?.let { cachedBackdrops[it] = backdropUrl }
+            }
+            if (posterUrl != null) {
+                trendingPosters[itemData] = posterUrl
+            }
 
             if (isTv) {
                 matchedResults.add(
@@ -475,6 +568,15 @@ open class NagordolaProvider : MainAPI() {
             val isTv = movie.isTvSeries || fileName.startsWith("tvshows")
 
             val posterUrl = movie.posterUrl?.replace("/w342/", "/w500/") ?: movie.posterUrl
+            val backdropUrl = movie.posterUrl?.replace("/w342/", "/w780/") ?: movie.posterUrl
+
+            if (backdropUrl != null) {
+                trendingBackdrops[itemData] = backdropUrl
+                movie.tmdbId?.let { cachedBackdrops[it] = backdropUrl }
+            }
+            if (posterUrl != null) {
+                trendingPosters[itemData] = posterUrl
+            }
 
             if (isTv) {
                 results.add(
@@ -603,6 +705,29 @@ open class NagordolaProvider : MainAPI() {
         } ?: emptyList()
     }
 
+    private suspend fun fetchBackdropFromTmdb(tmdbId: Long?, isTv: Boolean): String? {
+        if (tmdbId == null || tmdbId <= 0) return null
+        cachedBackdrops[tmdbId]?.let { return it }
+        val apiKey = NagordolaSettingsManager.getApiKey()?.ifBlank { null } ?: DEFAULT_TMDB_API_KEY
+        return try {
+            val type = if (isTv) "tv" else "movie"
+            val resp = withTimeoutOrNull(2500L) {
+                app.get("https://api.themoviedb.org/3/$type/$tmdbId?api_key=$apiKey", headers = mapOf("User-Agent" to "Mozilla/5.0")).text
+            }
+            if (!resp.isNullOrBlank()) {
+                val root = JSONObject(resp)
+                val path = root.optString("backdrop_path").takeIf { it.isNotBlank() && it != "null" }
+                if (path != null) {
+                    val fullUrl = "https://image.tmdb.org/t/p/w1280$path"
+                    cachedBackdrops[tmdbId] = fullUrl
+                    fullUrl
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Load Details (Movie & TV Series)
     // -------------------------------------------------------------------------
@@ -610,16 +735,32 @@ open class NagordolaProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val movie = findMovieByData(url)
 
-        val title = movie?.title ?: url.substringAfterLast('/').replace(videoExtRegex, "")
         val isTv = movie?.isTvSeries == true || url.contains("tvshows") || url.contains("tv-series")
+        val cleanUrl = url.substringBefore('?')
+        val title = movie?.title?.ifBlank { null }
+            ?: (if (url.startsWith("nagordola://")) {
+                val clean = cleanUrl.substringAfterLast('/')
+                if (clean.all { it.isDigit() }) null else clean
+            } else null)
+            ?: cleanUrl.substringAfterLast('/').replace(videoExtRegex, "").ifBlank { "Nagordola" }
+
         val yearInt = movie?.year?.take(4)?.toIntOrNull()
-        val poster = movie?.posterUrl
         val plot = movie?.overview
         val rating = movie?.rating?.let { Score.from10(it) }
 
+        val poster = trendingPosters[url]
+            ?: movie?.posterUrl?.replace("/w342/", "/w500/")
+            ?: movie?.posterUrl
+
+        val backdrop = trendingBackdrops[url]
+            ?: movie?.tmdbId?.let { cachedBackdrops[it] }
+            ?: fetchBackdropFromTmdb(movie?.tmdbId, isTv)
+            ?: poster?.replace("/w342/", "/w780/")
+            ?: poster
+
         if (isTv) {
             val episodes = mutableListOf<Episode>()
-            val seriesFolderUrl = movie?.videos?.firstOrNull()?.url ?: url
+            val seriesFolderUrl = movie?.videos?.firstOrNull()?.url ?: cleanUrl
 
             // Try scraping AList directory for seasons/episodes as done in PotFlix
             val liveEntries = if (seriesFolderUrl.startsWith("http")) {
@@ -686,6 +827,7 @@ open class NagordolaProvider : MainAPI() {
 
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes.sortedWith(compareBy({ it.season ?: 1 }, { it.episode ?: 0 }))) {
                 this.posterUrl = poster
+                this.backgroundPosterUrl = backdrop
                 this.plot = plot
                 this.year = yearInt
                 this.score = rating
@@ -693,11 +835,12 @@ open class NagordolaProvider : MainAPI() {
             }
         } else {
             // Movie
-            val mainVideoUrl = movie?.videos?.firstOrNull()?.url ?: url
+            val mainVideoUrl = movie?.videos?.firstOrNull()?.url ?: cleanUrl
             val streamUrl = toStreamUrl(mainVideoUrl)
 
             return newMovieLoadResponse(title, url, TvType.Movie, streamUrl) {
                 this.posterUrl = poster
+                this.backgroundPosterUrl = backdrop
                 this.plot = plot
                 this.year = yearInt
                 this.score = rating
@@ -716,7 +859,8 @@ open class NagordolaProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val streamUrl = toStreamUrl(data)
+        val cleanData = data.substringBefore('?')
+        val streamUrl = toStreamUrl(cleanData)
         val movie = findMovieByData(data)
         val quality = movie?.videos?.firstOrNull()?.quality ?: "HD"
 

@@ -13,9 +13,11 @@ class NagordolaPlugin : Plugin() {
 
     companion object {
         var pluginContext: Context? = null
+        var pluginInstance: NagordolaPlugin? = null
     }
 
     override fun load(context: Context) {
+        pluginInstance = this
         pluginContext = context
         activity = context as? AppCompatActivity
         registerMainAPI(NagordolaProvider())
