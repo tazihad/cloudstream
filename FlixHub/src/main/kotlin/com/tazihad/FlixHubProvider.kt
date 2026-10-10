@@ -261,7 +261,7 @@ class FlixHubProvider : MainAPI() {
         }
     }
 
-    private fun loadMovie(url: String, doc: Document): LoadResponse {
+    private suspend fun loadMovie(url: String, doc: Document): LoadResponse {
         var title = doc.selectFirst("h1.player-movie-details-title, h1.movie-title, h1")?.text()?.trim()
         if (title.isNullOrBlank()) {
             title = doc.selectFirst("title")?.text()?.substringBefore("—")?.trim() ?: "Movie"
@@ -298,7 +298,7 @@ class FlixHubProvider : MainAPI() {
         }
     }
 
-    private fun loadTvSeries(url: String, doc: Document): LoadResponse {
+    private suspend fun loadTvSeries(url: String, doc: Document): LoadResponse {
         var title = doc.selectFirst("h1.player-movie-details-title, h1.movie-title, h1")?.text()?.trim()
         if (title.isNullOrBlank()) {
             title = doc.selectFirst("title")?.text()?.substringBefore("—")?.trim() ?: "TV Series"
