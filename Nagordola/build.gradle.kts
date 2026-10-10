@@ -1,5 +1,5 @@
 // use an integer for version numbers
-version = 1
+version = 2
 
 android {
     namespace = "com.tazihad"
@@ -29,3 +29,12 @@ cloudstream {
     )
     language = "bn"
 }
+
+afterEvaluate {
+    tasks.named<org.gradle.api.tasks.bundling.Zip>("make") {
+        from("src/main/assets") {
+            into("assets")
+        }
+    }
+}
+

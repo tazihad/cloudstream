@@ -11,8 +11,13 @@ class NagordolaPlugin : Plugin() {
     private val TAG = "NagordolaPlugin"
     var activity: AppCompatActivity? = null
 
+    companion object {
+        var pluginContext: Context? = null
+    }
+
     override fun load(context: Context) {
-        activity = context as AppCompatActivity
+        pluginContext = context
+        activity = context as? AppCompatActivity
         registerMainAPI(NagordolaProvider())
 
         openSettings = { ctx ->
