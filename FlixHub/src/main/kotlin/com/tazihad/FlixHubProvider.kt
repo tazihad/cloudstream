@@ -25,6 +25,14 @@ data class FlixHubSearchResult(
     @param:JsonProperty("watch_url") val watchUrl: String? = null
 )
 
+data class FlixHubListingResponse(
+    @param:JsonProperty("html") val html: String? = null,
+    @param:JsonProperty("has_more") val hasMore: Boolean? = null,
+    @param:JsonProperty("current_page") val currentPage: Int? = null,
+    @param:JsonProperty("next_page") val nextPage: Int? = null,
+    @param:JsonProperty("total") val total: Int? = null
+)
+
 class FlixHubProvider : MainAPI() {
     override var mainUrl = "https://flixhub.net"
     override var name = "FlixHub"
@@ -47,22 +55,26 @@ class FlixHubProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "featured" to "Featured Spotlight",
-        "trending" to "Trending Now",
-        "recent" to "Recent Uploads",
-        "tv-shows" to "Latest TV Series",
-        "movies?category=hollywood" to "Hollywood Movies",
-        "movies?category=bollywood" to "Bollywood Movies",
-        "movies?category=south-indian" to "South Indian Movies",
-        "movies?category=Action" to "Action Movies",
-        "movies?category=Adventure" to "Adventure Movies",
-        "movies?category=Animation" to "Animation Movies",
-        "movies?category=Comedy" to "Comedy Movies",
-        "movies?category=Crime" to "Crime Movies",
-        "movies?category=Drama" to "Drama Movies",
-        "movies?category=Horror" to "Horror Movies",
-        "movies?category=Sci-Fi" to "Sci-Fi Movies",
-        "movies?category=Thriller" to "Thriller Movies",
-        "kidztime" to "KidzTime"
+        "section:Trending Now" to "Trending Now",
+        "section:Recent Uploads" to "Recent Uploads",
+        "section:Latest TV Series" to "Latest TV Series",
+        "section:Hollywood Movies" to "Hollywood Movies",
+        "section:South Indian Movies" to "South Indian Movies",
+        "section:Bollywood Movies" to "Bollywood Movies",
+        "section:Kids Movies" to "Kids Movies",
+        "tv-shows" to "All TV Series",
+        "movies?category=hollywood" to "Browse Hollywood",
+        "movies?category=bollywood" to "Browse Bollywood",
+        "movies?category=south-indian" to "Browse South Indian",
+        "movies?category=Action" to "Browse Action",
+        "movies?category=Adventure" to "Browse Adventure",
+        "movies?category=Animation" to "Browse Animation",
+        "movies?category=Comedy" to "Browse Comedy",
+        "movies?category=Crime" to "Browse Crime",
+        "movies?category=Drama" to "Browse Drama",
+        "movies?category=Horror" to "Browse Horror",
+        "movies?category=Sci-Fi" to "Browse Sci-Fi",
+        "movies?category=Thriller" to "Browse Thriller"
     )
 
     private fun fixUrl(url: String?): String? {
@@ -76,26 +88,41 @@ class FlixHubProvider : MainAPI() {
     }
 
     private fun Element.toSearchResponse(): SearchResponse? {
-        val rawHref = attr("href")
+        // If element is an <article>, extract watch URL from data-watch-url or internal link
+        val rawHref = if (tagName().equals("article", ignoreCase = true)) {
+            attr("data-watch-url").ifBlank {
+                selectFirst("a[href*='/watch/']")?.attr("href") ?: ""
+            }
+        } else {
+            attr("href").ifBlank {
+                attr("data-watch-url").ifBlank {
+                    selectFirst("a[href*='/watch/']")?.attr("href") ?: ""
+                }
+            }
+        }
+
         if (rawHref.isBlank()) return null
         val fullHref = fixUrl(rawHref) ?: return null
 
-        val isTv = fullHref.contains("/watch/series/")
+        val isTv = fullHref.contains("/watch/series/") || attr("data-card-type").equals("series", ignoreCase = true)
         val type = if (isTv) TvType.TvSeries else TvType.Movie
 
         val imgEl = selectFirst("img")
-        var title = imgEl?.attr("alt")?.trim()
+        var title = selectFirst(".movie-card-browse-title a, .movie-card-browse-title, .movie-title a, .movie-title, h3 a, h3, h4")?.text()?.trim()
         if (title.isNullOrBlank()) {
-            title = selectFirst(".movie-card-browse-title, .movie-title, h3, h4")?.text()?.trim()
+            title = selectFirst("a.movie-card-poster-link")?.attr("aria-label")?.trim()
         }
         if (title.isNullOrBlank()) {
             title = attr("aria-label").trim()
         }
-        if (title.isBlank()) return null
+        if (title.isNullOrBlank()) {
+            title = imgEl?.attr("alt")?.trim()
+        }
+        if (title.isNullOrBlank()) return null
 
         val posterUrl = fixUrl(imgEl?.attr("src"))
 
-        val yearText = selectFirst(".movie-card-meta, .badge-year")?.text() ?: text()
+        val yearText = selectFirst(".movie-card-meta span, .movie-card-meta, .badge-year")?.text() ?: text()
         val year = Regex("""\b(19\d\d|20\d\d)\b""").find(yearText)?.groupValues?.get(1)?.toIntOrNull()
 
         val ratingText = selectFirst(".badge-rating, .rating, .score")?.text()
@@ -117,8 +144,8 @@ class FlixHubProvider : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        return when (request.data) {
-            "featured" -> {
+        return when {
+            request.data == "featured" -> {
                 if (page > 1) return newHomePageResponse(request.name, emptyList())
                 val doc = app.get(mainUrl, headers = defaultHeaders).document
                 val slides = doc.select(".hero-slide")
@@ -150,32 +177,22 @@ class FlixHubProvider : MainAPI() {
                 }
                 newHomePageResponse(request.name, results)
             }
-            "trending" -> {
+            request.data.startsWith("section:") -> {
                 if (page > 1) return newHomePageResponse(request.name, emptyList())
+                val sectionName = request.data.removePrefix("section:").trim()
                 val doc = app.get(mainUrl, headers = defaultHeaders).document
-                // Find container for Trending Now
-                val heading = doc.select("h2, h3").firstOrNull { it.text().contains("Trending Now", ignoreCase = true) }
-                val section = heading?.closest("section, div.container, div.container-wide, div")
-                val cards = section?.select("a[href*='/watch/movie/'], a[href*='/watch/series/']") ?: emptyList()
-                val seen = mutableSetOf<String>()
-                val results = cards.mapNotNull {
-                    val href = it.attr("href")
-                    if (!seen.add(href)) return@mapNotNull null
-                    it.toSearchResponse()
+
+                // Locate specific section by its h2.section-title-custom
+                val targetSection = doc.select("section.content-section-custom").firstOrNull { sec ->
+                    sec.selectFirst("h2.section-title-custom")?.text()?.contains(sectionName, ignoreCase = true) == true
                 }
-                newHomePageResponse(request.name, results)
-            }
-            "recent" -> {
-                if (page > 1) return newHomePageResponse(request.name, emptyList())
-                val doc = app.get(mainUrl, headers = defaultHeaders).document
-                val heading = doc.select("h2, h3").firstOrNull { it.text().contains("Recent Uploads", ignoreCase = true) }
-                val section = heading?.closest("section, div.container, div.container-wide, div")
-                val cards = section?.select("a[href*='/watch/movie/'], a[href*='/watch/series/']") ?: emptyList()
+
+                val articles = targetSection?.select("article.movie-card-final") ?: emptyList()
                 val seen = mutableSetOf<String>()
-                val results = cards.mapNotNull {
-                    val href = it.attr("href")
-                    if (!seen.add(href)) return@mapNotNull null
-                    it.toSearchResponse()
+                val results = articles.mapNotNull { art ->
+                    val res = art.toSearchResponse() ?: return@mapNotNull null
+                    if (!seen.add(res.url)) return@mapNotNull null
+                    res
                 }
                 newHomePageResponse(request.name, results)
             }
@@ -185,14 +202,47 @@ class FlixHubProvider : MainAPI() {
                 } else {
                     "$mainUrl/${request.data}?page=$page"
                 }
-                val doc = app.get(url, headers = defaultHeaders).document
-                val cards = doc.select("a.movie-card-poster-link, article.movie-card a[href*='/watch/'], a[href*='/watch/movie/'], a[href*='/watch/series/']")
-                val seen = mutableSetOf<String>()
-                val results = cards.mapNotNull {
-                    val href = it.attr("href")
-                    if (!seen.add(href)) return@mapNotNull null
-                    it.toSearchResponse()
+
+                // If page > 1, try the AJAX JSON pagination endpoint first
+                val results = if (page > 1) {
+                    try {
+                        val res = app.get(
+                            url,
+                            headers = mapOf(
+                                "X-Requested-With" to "XMLHttpRequest",
+                                "Accept" to "application/json",
+                                "User-Agent" to defaultHeaders["User-Agent"]!!,
+                                "Referer" to "$mainUrl/"
+                            )
+                        )
+                        val listing = parseJson<FlixHubListingResponse>(res.text)
+                        val fragment = org.jsoup.Jsoup.parseBodyFragment(listing.html ?: "")
+                        val seen = mutableSetOf<String>()
+                        fragment.select("article.movie-card-final").mapNotNull { art ->
+                            val parsed = art.toSearchResponse() ?: return@mapNotNull null
+                            if (!seen.add(parsed.url)) return@mapNotNull null
+                            parsed
+                        }
+                    } catch (_: Throwable) {
+                        // Fallback to regular HTML
+                        val doc = app.get(url, headers = defaultHeaders).document
+                        val seen = mutableSetOf<String>()
+                        doc.select("article.movie-card-final").mapNotNull { art ->
+                            val parsed = art.toSearchResponse() ?: return@mapNotNull null
+                            if (!seen.add(parsed.url)) return@mapNotNull null
+                            parsed
+                        }
+                    }
+                } else {
+                    val doc = app.get(url, headers = defaultHeaders).document
+                    val seen = mutableSetOf<String>()
+                    doc.select("article.movie-card-final").mapNotNull { art ->
+                        val parsed = art.toSearchResponse() ?: return@mapNotNull null
+                        if (!seen.add(parsed.url)) return@mapNotNull null
+                        parsed
+                    }
                 }
+
                 newHomePageResponse(request.name, results)
             }
         }
